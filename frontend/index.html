@@ -1,0 +1,2573 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kipustock - Arbitraje Comercial & Gestión de Inventario</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css?v=2.5">
+</head>
+<body>
+  <!-- ENCABEZADO / NAVBAR -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m7.5 4.27 9 5.15"></path>
+            <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path>
+            <path d="m3.3 7 8.7 5 8.7-5"></path>
+            <path d="M12 22V12"></path>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">KIPU<span>STOCK</span></h1>
+          <p class="brand-subtitle">Arbitraje Comercial & Rastreo de Mercaderías</p>
+        </div>
+      </div>
+
+      <!-- SELECTOR DE MONEDA Y ACCESO RÁPIDO AL LOTE -->
+      <div class="header-actions">
+        <!-- INDICADOR DISCRETO DE BASE DE DATOS ($0 CLOUD vs LOCAL) -->
+        <div class="db-status-badge local" id="headerDbBadge" title="Estado de la base de datos (Click para ver detalles)">
+          <span class="db-status-dot" id="headerDbDot"></span>
+          <span id="headerDbText">💾 Modo Local</span>
+        </div>
+
+        <div class="currency-selector-card">
+          <label for="currencySelect" class="currency-label">Moneda:</label>
+          <div class="currency-toggle">
+            <button type="button" class="curr-btn active" data-curr="PEN">PEN (S/)</button>
+            <button type="button" class="curr-btn" data-curr="USD">USD ($)</button>
+          </div>
+          <span class="tc-hint" title="Tipo de cambio de referencia S/ 3.75">TC: S/ 3.75</span>
+        </div>
+
+        <button type="button" class="catalog-link-btn btn-publish-tunnel-trigger" id="btnHeaderTunnel" title="Publicar Tienda en Internet ($0 Cloudflare Tunnel)" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.4); cursor: pointer;">
+          <span id="headerTunnelDot" style="width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; display: inline-block; margin-right: 4px;"></span>
+          <span id="headerTunnelLabel">🌐 Publicar Tienda ($0)</span>
+        </button>
+
+        <a href="/tienda" target="_blank" class="catalog-link-btn" id="headerStoreLink" title="Abrir Tienda Web Pública en nueva pestaña" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border-color: rgba(16, 185, 129, 0.4);">
+          <span>🏪 Ver Tienda Pública ↗</span>
+        </a>
+
+        <a href="/catalogo" target="_blank" class="catalog-link-btn" title="Abrir Catálogo Rápido en nueva pestaña">
+          <span>🛍️ Catálogo</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+        </a>
+
+        <button class="cart-pill-btn" id="openLotQuickBtn" title="Ver Lote de Operación">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="8" cy="21" r="1"></circle>
+            <circle cx="19" cy="21" r="1"></circle>
+            <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"></path>
+          </svg>
+          <span class="cart-pill-text">Lote Activo</span>
+          <span class="cart-badge" id="lotBadgeCount">0</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- PESTAÑAS DE NAVEGACIÓN -->
+    <nav class="nav-tabs-wrapper">
+      <div class="nav-tabs">
+        <button class="nav-tab active" data-tab="tab-search">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.3-4.3"></path>
+          </svg>
+          Buscador de Mercaderías
+        </button>
+        <button class="nav-tab" data-tab="tab-inventory">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path>
+            <path d="m3.3 7 8.7 5 8.7-5"></path>
+            <path d="M12 22V12"></path>
+          </svg>
+          Mercadería Propia (Inventario en Mano)
+          <span class="tab-counter" id="inventoryCounter">0</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-lot">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="1" x2="12" y2="23"></line>
+            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+          </svg>
+          Lista Sumatoria (Lote de Operación)
+          <span class="tab-counter highlight" id="lotCounterTab">0</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-sales">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="1" x2="12" y2="23"></line>
+            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+            <circle cx="12" cy="12" r="10"></circle>
+          </svg>
+          Ventas y Ganancias Reales
+          <span class="tab-counter highlight-green" id="salesCounterTab">0</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-web-orders">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+          </svg>
+          Tienda Web & Pedidos
+          <span class="tab-counter highlight" id="webOrdersPendingBadge">0</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-campaigns">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m3 11 18-5v12L3 14v-3z"></path>
+            <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"></path>
+          </svg>
+          Campañas y Redes Sociales
+          <span class="tab-counter highlight-purple" id="campaignsBadge">IA</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-crm">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+          Clientes & Cotizador PDF
+          <span class="tab-counter highlight-blue" id="crmClientsCountBadge">0</span>
+        </button>
+      </div>
+    </nav>
+  </header>
+
+  <!-- CONTENEDOR PRINCIPAL -->
+  <main class="main-container">
+
+    <!-- ============================================================== -->
+    <!-- SECCIÓN A: BUSCADOR DE MERCADERÍAS & ARBITRAJE -->
+    <!-- ============================================================== -->
+    <section id="tab-search" class="tab-content active">
+      <div class="search-panel-card">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">Rastreo de Oportunidades de Arbitraje</h2>
+            <p class="panel-subtitle">Encuentra brechas de precio entre portales mayoristas, minoristas y marketplaces.</p>
+          </div>
+          <div class="ai-status-badge" id="aiStatusBadge" title="Estado de la IA y Scraping en Vivo">
+            <span class="status-dot active"></span>
+            <span id="aiStatusBadgeText">Fase 2: Playwright + Gemini 3.8/2.5 Flash</span>
+          </div>
+        </div>
+
+        <form id="searchForm" class="search-form">
+          <!-- Barra de Búsqueda de Texto -->
+          <div class="search-bar-row">
+            <div class="search-input-wrap">
+              <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.3-4.3"></path>
+              </svg>
+              <input 
+                type="text" 
+                id="searchQuery" 
+                class="search-input" 
+                placeholder="Escribe el nombre, marca o modelo (ej. 'Taladro Percutor 20V', 'Audífonos Bluetooth', 'Silla gamer')..." 
+              />
+              <button type="button" id="clearSearchQuery" class="clear-btn" title="Limpiar texto">&times;</button>
+            </div>
+            <button type="submit" class="btn btn-primary btn-search" id="btnSubmitSearch">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.3-4.3"></path>
+              </svg>
+              <span>Buscar Oportunidades</span>
+            </button>
+          </div>
+
+          <!-- Chips de Sugerencia Rápida / Búsquedas de Alta Rotación -->
+          <div class="search-quick-chips-row" id="quickSuggestionsBar" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; margin-bottom: 4px;">
+            <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600;">💡 Sugerencias rápidas:</span>
+            <div id="quickChipsContainer" style="display: inline-flex; gap: 6px; flex-wrap: wrap;">
+              <button type="button" class="btn-quick-chip" data-query="Taladro Percutor 20V">Taladro Percutor 20V</button>
+              <button type="button" class="btn-quick-chip" data-query="Audífonos Bluetooth ANC">Audífonos Bluetooth ANC</button>
+              <button type="button" class="btn-quick-chip" data-query="Smartwatch Deportivo">Smartwatch Deportivo</button>
+              <button type="button" class="btn-quick-chip" data-query="Zapatillas Urbanas">Zapatillas Urbanas</button>
+              <button type="button" class="btn-quick-chip" data-query="Silla Gamer">Silla Gamer</button>
+              <button type="button" class="btn-quick-chip" data-query="Aspiradora Inalámbrica">Aspiradora Inalámbrica</button>
+            </div>
+          </div>
+
+          <!-- Selector de Imagen Drag & Drop -->
+          <div class="search-grid-two-col">
+            <div class="image-drop-area" id="imageDropZone" tabindex="0" title="Arrastra, selecciona o presiona Ctrl+V para pegar una imagen">
+              <input type="file" id="searchImageFile" accept="image/*" class="file-hidden-input">
+              <div class="drop-content" id="dropPrompt">
+                <div class="drop-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect>
+                    <circle cx="9" cy="9" r="2"></circle>
+                    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+                  </svg>
+                </div>
+                <div class="drop-text">
+                  <p class="drop-title">Cargar, arrastrar o pegar foto del producto</p>
+                  <p class="drop-hint">PNG, JPG, WEBP o pega captura directa con <span class="kbd-pill"><kbd>Ctrl</kbd> + <kbd>V</kbd></span></p>
+                </div>
+                <div class="drop-actions-group">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btnSelectSearchImage">📁 Seleccionar Foto</button>
+                  <button type="button" class="btn btn-outline-primary btn-sm" id="btnPasteSearchImage" title="Pegar imagen desde el portapapeles">📋 Pegar (Ctrl + V)</button>
+                </div>
+              </div>
+
+              <!-- Vista previa inmediata de la foto -->
+              <div class="preview-container hidden" id="searchImagePreviewContainer">
+                <img id="searchImagePreview" src="" alt="Vista previa de búsqueda" />
+                <div class="preview-info">
+                  <span id="previewImageName" class="preview-name">foto.jpg</span>
+                  <button type="button" class="btn-remove-preview" id="btnRemoveSearchImage" title="Quitar imagen">&times; Quitar foto</button>
+                </div>
+              </div>
+
+              <!-- TARJETA DE RECONOCIMIENTO VISUAL CON GEMINI (FASE 2) -->
+              <div class="vision-ai-card hidden" id="visionAiAnalysisCard">
+                <div class="vision-ai-header">
+                  <div class="vision-ai-badge">
+                    <span class="sparkle-icon">✨</span>
+                    <span id="visionAiStatusTitle">Reconocimiento Gemini Vision</span>
+                  </div>
+                  <span class="vision-ai-category" id="visionAiCategoryTag">Tecnología</span>
+                </div>
+                <div class="vision-ai-body">
+                  <div class="vision-ai-title-row">
+                    <h4 id="visionAiProdTitle" class="vision-ai-title">Producto detectado</h4>
+                    <span id="visionAiModelText" class="vision-ai-model">Modelo</span>
+                  </div>
+                  <div class="vision-ai-queries-wrap">
+                    <span class="queries-hint">Consultas optimizadas para Perú:</span>
+                    <div id="visionAiQueriesList" class="queries-tags">
+                      <!-- Pills dinámicas de búsqueda -->
+                    </div>
+                  </div>
+                  <div class="vision-ai-footer-row">
+                    <span>Precio ref. de reventa sugerido:</span>
+                    <strong id="visionAiPriceRef" class="vision-price-highlight">S/ 0.00</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Filtros: Sitios Web y Márgenes -->
+            <div class="filters-card">
+              <div class="filters-card-header">
+                <div class="filter-title-wrap">
+                  <h3 class="filter-group-title">Portales y Marketplaces Objetivo</h3>
+                  <span class="active-sites-badge" id="activeSitesBadge">3 activos</span>
+                </div>
+                <div class="filter-sites-actions">
+                  <button type="button" class="btn btn-primary btn-xs btn-add-custom-store-trigger" id="btnOpenCustomStoresModal" title="Registrar e incluir nuevas tiendas o proveedores web con su dirección y datos">
+                    <span>🌐</span> + Incluir Tienda Web
+                  </button>
+                  <span class="action-sep">•</span>
+                  <button type="button" class="btn-text-xs" id="btnSelectAllSites">Seleccionar todos</button>
+                  <span class="action-sep">•</span>
+                  <button type="button" class="btn-text-xs" id="btnClearAllSites">Limpiar</button>
+                </div>
+              </div>
+
+              <!-- Selector y Lista de Portales para los Filtros -->
+              <div class="sites-manager-box">
+                <div class="add-site-row">
+                  <div class="custom-site-select-wrap">
+                    <select id="selectStoreToAdd" class="store-picker-select">
+                      <option value="" disabled selected>+ Agregar tienda a la búsqueda...</option>
+                      <optgroup label="⭐ Mis Tiendas y Proveedores Web" id="optgroupCustomStores">
+                        <!-- Se pueblan dinámicamente desde SQLite -->
+                      </optgroup>
+                      <optgroup label="Tiendas Retail en Vivo (Perú)">
+                        <option value="Falabella">🛒 Falabella Perú (Catálogo en vivo)</option>
+                        <option value="Ripley">🛍️ Ripley Perú (Catálogo en vivo)</option>
+                        <option value="Sodimac">🔨 Sodimac Perú (Hogar y herramientas)</option>
+                        <option value="PlazaVea">🛒 PlazaVea Perú (Supermercado y electro)</option>
+                        <option value="Promart">🛠️ Promart Perú (Homecenter Perú)</option>
+                      </optgroup>
+                      <optgroup label="Marketplaces y Arbitraje P2P">
+                        <option value="Facebook Marketplace">👥 Facebook Marketplace (Lima / Arbitraje P2P)</option>
+                        <option value="Mercado Libre">📦 Mercado Libre Perú (Marketplace nacional)</option>
+                      </optgroup>
+                      <optgroup label="Mayoristas e Importación Directa">
+                        <option value="Temu">🧡 Temu (Importación y ofertas)</option>
+                        <option value="AliExpress">🌐 AliExpress (Mayorista internacional)</option>
+                      </optgroup>
+                      <optgroup label="Búsqueda Web Abierta">
+                        <option value="Web / Google Shopping">🔍 Web / Google Shopping (Búsqueda abierta)</option>
+                      </optgroup>
+                    </select>
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btnAddSelectedStore">
+                    + Agregar
+                  </button>
+                </div>
+
+                <!-- Lista de etiquetas activas seleccionadas con botón para remover -->
+                <div class="active-sites-tags-container" id="activeSitesContainer">
+                  <!-- Se renderizan dinámicamente -->
+                </div>
+                <!-- Inputs ocultos para mantener compatibilidad en el formulario -->
+                <div id="hiddenSiteInputs"></div>
+              </div>
+
+              <div class="filter-inputs-row">
+                <div class="filter-field">
+                  <label for="filterMaxPrice">Precio máx. compra (<span class="currency-symbol">S/</span>):</label>
+                  <input type="number" id="filterMaxPrice" placeholder="Sin límite" min="0" step="10">
+                </div>
+                <div class="filter-field">
+                  <label for="filterMinMargin">Margen neto mín. (%):</label>
+                  <input type="number" id="filterMinMargin" placeholder="Ej. 30" min="0" step="5">
+                </div>
+                <div class="filter-field highlight-field">
+                  <label for="filterCommission">Comisión venta / Envío (%):</label>
+                  <input type="number" id="filterCommission" value="12" min="0" max="100" step="0.5" title="Porcentaje retenido por pasarela, envío o comisión del marketplace">
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <!-- ALERTA VISUAL AUTOMÁTICA DE COINCIDENCIA CON INVENTARIO PROPIO -->
+        <div id="inventoryMatchAlert" class="inventory-match-banner hidden">
+          <div class="alert-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          </div>
+          <div class="alert-content">
+            <h4 class="alert-title">¡Coincidencia detectada en tu Mercadería Propia!</h4>
+            <p id="inventoryMatchText" class="alert-desc">Ya dispones de unidades registradas en tu propio almacén.</p>
+          </div>
+          <button class="btn btn-sm btn-outline-warning" id="btnGoToInventoryMatch">Ver en Almacén</button>
+        </div>
+      </div>
+
+      <!-- MONITOR DE OPORTUNIDADES / WATCHLIST DE SEGUIMIENTO -->
+      <div class="watchlist-panel-card">
+        <div class="watchlist-header">
+          <div class="watchlist-title-group">
+            <div class="watchlist-icon-badge">🎯</div>
+            <div>
+              <h3 class="watchlist-title">Monitor de Oportunidades & Watchlist Automática</h3>
+              <p class="watchlist-subtitle">Rastrea búsquedas guardadas y detecta brechas de precio automáticamente a costo $0.</p>
+            </div>
+          </div>
+          <div class="watchlist-actions">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnToggleNewAlertForm">
+              + Nueva Alerta
+            </button>
+            <button type="button" class="btn btn-sm btn-primary btn-run-alerts" id="btnRunAlertsScan">
+              ⚡ Ejecutar Rastreo de Alertas Ahora
+            </button>
+          </div>
+        </div>
+
+        <!-- Formulario nueva alerta (desplegable) -->
+        <div id="newAlertFormWrap" class="new-alert-form-wrap hidden">
+          <form id="formNewAlert">
+            <div class="new-alert-grid">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="alertTerm" class="form-label" style="font-size: 0.8rem;">Término de búsqueda:</label>
+                <input type="text" id="alertTerm" class="form-control form-control-sm" placeholder="Ej. Taladro inalámbrico 20v, Smartwatch" required>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="alertMaxPrice" class="form-label" style="font-size: 0.8rem;">Precio Máx (<span class="currency-symbol">S/</span>):</label>
+                <input type="number" id="alertMaxPrice" class="form-control form-control-sm" step="0.5" placeholder="Opcional">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="alertMinMargin" class="form-label" style="font-size: 0.8rem;">Margen Mín (%):</label>
+                <input type="number" id="alertMinMargin" class="form-control form-control-sm" step="1" value="20" required>
+              </div>
+              <div style="display: flex; gap: 6px;">
+                <button type="submit" class="btn btn-sm btn-primary">Guardar</button>
+                <button type="button" class="btn btn-sm btn-secondary" id="btnCancelAlert">Cancelar</button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <!-- Contenedor de Alertas Activas -->
+        <div id="alertsContainer" class="alerts-container">
+          <!-- Renderizado vía JavaScript -->
+        </div>
+
+        <!-- Resultados de Rastreo de Alertas -->
+        <div id="alertsResultsContainer" class="alerts-results-container hidden">
+          <div class="alerts-results-header">
+            <h4 style="font-size: 0.95rem; font-weight: 700; color: #38bdf8;" id="alertsResultsTitle">Oportunidades Detectadas por el Monitor</h4>
+            <button type="button" class="btn btn-xs btn-secondary" id="btnCloseAlertsResults">Cerrar Resultados</button>
+          </div>
+          <div id="alertsMatchesGrid" class="alerts-matches-grid">
+            <!-- Tarjetas de oportunidades -->
+          </div>
+        </div>
+      </div>
+
+      <!-- RESULTADOS COMPARATIVOS -->
+      <div class="results-section">
+        <div class="results-header">
+          <div>
+            <h3 class="results-title">Resultados de Arbitraje Comercial</h3>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px;">
+              <span id="resultsCountText" class="results-count">Mostrando 0 oportunidades encontradas</span>
+              <span id="resultsTimeBadge" class="badge hidden" style="font-size: 0.72rem; background: rgba(59, 130, 246, 0.15); color: #60a5fa; padding: 2px 8px; border-radius: 10px;" title="Tiempo de respuesta del rastreo">⏱ 0.0s</span>
+              <span id="resultsCacheBadge" class="badge hidden" style="font-size: 0.72rem; background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 2px 8px; border-radius: 10px;" title="Servido desde caché local">⚡ Caché</span>
+              <span id="resultsBroadenedBadge" class="badge hidden" style="font-size: 0.72rem; background: rgba(245, 158, 11, 0.15); color: #fbbf24; padding: 2px 8px; border-radius: 10px;" title="Consulta optimizada automáticamente">🔍 Consulta ampliada</span>
+            </div>
+          </div>
+          <div class="results-sorting">
+            <label for="sortResultsBy">Ordenar por:</label>
+            <select id="sortResultsBy" class="select-clean">
+              <option value="margin_desc">Mayor margen neto (%)</option>
+              <option value="profit_desc">Mayor ganancia por unidad (S/)</option>
+              <option value="price_asc">Menor precio de compra</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- INDICADOR DE CARGA: PLAYWRIGHT & GEMINI -->
+        <div id="searchLoadingIndicator" class="search-loading-container hidden">
+          <div class="loading-spinner-wrap">
+            <div class="spinner-ring"></div>
+            <span class="spinner-gemini-icon">✨</span>
+          </div>
+          <div class="loading-text-wrap">
+            <h4 class="loading-main-title" id="loadingMainTitle">Rastreando tiendas y analizando márgenes con Gemini...</h4>
+            <p class="loading-sub-title" id="loadingSubTitle">Conectando con Mercado Libre, Falabella, Ripley, Sodimac y AliExpress en tiempo real</p>
+          </div>
+        </div>
+
+        <!-- BANNER DE AVISO CUANDO PORTALES REQUIEREN DESBLOQUEO O TIENEN ANTIBOT -->
+        <div id="storeBlockedAlertBanner" class="hidden" style="margin-bottom: 12px; padding: 12px 16px; border-radius: 8px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 1.3rem;">🛡️</span>
+            <div>
+              <strong style="color: #fbbf24; font-size: 0.9rem;" id="blockedAlertTitle">Verificación requerida en portales</strong>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin: 2px 0 0 0;" id="blockedAlertDesc">
+                Se detectó antibot en algún portal. Los resultados de los demás portales se muestran normalmente abajo.
+              </p>
+            </div>
+          </div>
+          <div id="blockedAlertActions" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;"></div>
+        </div>
+
+        <!-- BARRA DE ESTADO DE CONEXIÓN POR TIENDA (VERACIDAD DE DATOS) -->
+        <div id="storeStatusBar" class="store-status-bar hidden"></div>
+
+        <!-- Grid de tarjetas de resultados -->
+        <div id="resultsGrid" class="results-grid">
+          <!-- Renderizado dinámico vía JavaScript -->
+        </div>
+
+        <div id="resultsEmptyState" class="empty-state">
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.3-4.3"></path>
+            </svg>
+          </div>
+          <h4>Comienza una búsqueda de arbitraje</h4>
+          <p>Ingresa una palabra clave, selecciona portales o sube una fotografía para rastrear precios y márgenes comerciales.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================== -->
+
+    
+
+
+
+
+    <!-- ============================================================== -->
+    <!-- SECCIÓN B: MERCADERÍA PROPIA (INVENTARIO EN MANO) -->
+    <!-- ============================================================== -->
+    <section id="tab-inventory" class="tab-content">
+      <div class="inventory-layout">
+        
+        <!-- FORMULARIO DE REGISTRO RÁPIDO -->
+        <div class="inventory-form-card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Registrar Producto Propio</h2>
+              <p class="card-subtitle">Inventario físico en mano o lotes adquiridos</p>
+            </div>
+            <span class="badge-tag">Persistente en SQLite</span>
+          </div>
+
+          <form id="newProductForm" class="custom-form">
+            <div class="form-group">
+              <label for="prodName">Nombre / Descripción del Producto *</label>
+              <input type="text" id="prodName" required placeholder="Ej. Taladro Percutor 20V Brushless">
+            </div>
+
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="prodModel">Modelo / Código (Opcional)</label>
+                <input type="text" id="prodModel" placeholder="Ej. TP-20V-PRO">
+              </div>
+              <div class="form-group">
+                <label for="prodStatus">Estado del Producto</label>
+                <select id="prodStatus">
+                  <option value="Nuevo">Nuevo (En caja)</option>
+                  <option value="Saldo">Saldo de almacén</option>
+                  <option value="Liquidación">Liquidación de lote</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Carga y Previsualización Prominente de Foto / Archivo de Artículo Propio -->
+            <div class="form-group">
+              <div class="prod-photo-header">
+                <div>
+                  <label class="form-label-bold">Archivo o Fotografía del Artículo (Reconocimiento Automático IA)</label>
+                  <p style="font-size: 0.78rem; color: var(--text-muted); margin: 2px 0 0 0;">
+                    Arrastra, sube o pega una foto o archivo del artículo (PNG, JPG, PDF) para autocompletar nombre, modelo y precios.
+                  </p>
+                </div>
+                <span class="photo-status-badge" id="prodPhotoBadge">Sin archivo asignado</span>
+              </div>
+
+              <!-- Botones de Acción de Imagen y Archivo -->
+              <div class="prod-photo-actions-row">
+                <button type="button" class="btn btn-secondary btn-xs" id="btnUploadProdPhoto" title="Subir foto o documento del artículo para autocompletar">
+                  📁 Subir Archivo / Foto
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-xs" id="btnPasteProdPhoto" title="Pegar foto o captura desde el portapapeles con Ctrl+V">
+                  📋 Pegar (Ctrl+V)
+                </button>
+                <button type="button" class="btn btn-ai-sparkle btn-xs" id="btnAiAutocompleteProd" title="Reconocer producto y precios sugeridos usando Gemini Vision">
+                  ✨ Reconocer con IA
+                </button>
+                <button type="button" class="btn btn-ai-photo btn-xs" id="btnGenerateCatalogPhoto" title="Generar fotografía profesional estilo estudio usando IA">
+                  🎨 Generar Foto Catálogo IA
+                </button>
+                <input type="file" id="prodPhotoInput" accept="image/*,.pdf,application/pdf" class="file-hidden-input">
+              </div>
+
+              <!-- Tarjeta de Vista Previa y Dropzone Interactivo de Artículos -->
+              <div class="prod-photo-preview-card image-drop-area" id="prodPhotoPreviewCard" tabindex="0" title="Arrastra y suelta aquí el archivo o foto del artículo, o presiona Ctrl+V para pegar captura">
+                <!-- Estado Vacío / Dropzone -->
+                <div class="prod-photo-empty-state" id="prodPhotoEmptyState">
+                  <div class="empty-photo-icon">📷</div>
+                  <div class="empty-photo-texts">
+                    <p class="empty-photo-title">Arrastra o suelta aquí el archivo o foto del artículo</p>
+                    <p class="empty-photo-hint">Admite imágenes (PNG, JPG, WEBP) o documentos PDF. Al cargarlo, <strong>la IA reconocerá el producto y sus datos para registrarlo rápidamente</strong> como en el buscador.</p>
+                  </div>
+                  <div class="drop-actions-group" style="margin-top: 6px;">
+                    <span class="kbd-pill"><kbd>Ctrl</kbd> + <kbd>V</kbd> para pegar captura</span>
+                  </div>
+                </div>
+
+                <!-- Estado con Imagen Activa (Grande y Clara) -->
+                <div class="prod-photo-active-state hidden" id="prodPhotoActiveState">
+                  <div class="photo-frame-wrap">
+                    <img id="prodLargePreviewImg" src="" alt="Foto o documento del producto" />
+                    <div class="photo-tag-chip" id="prodPhotoTagChip">Artículo Reconocido</div>
+                  </div>
+                  <div class="photo-info-bar">
+                    <div class="photo-meta">
+                      <strong id="prodPhotoTitleText">Fotografía de Catálogo Lista</strong>
+                      <span id="prodPhotoName" class="photo-subtext">Guardado como /product_images/...</span>
+                    </div>
+                    <div class="photo-actions-right">
+                      <button type="button" class="btn btn-xs btn-outline-danger" id="btnRemoveProdPhoto" title="Quitar archivo">
+                        ✕ Quitar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Indicador de carga de foto y análisis IA -->
+                <div class="prod-photo-loading hidden" id="prodPhotoLoading">
+                  <div class="spinner-ring"></div>
+                  <p id="prodPhotoLoadingText">Reconociendo artículo y autocompletando datos con Gemini Vision...</p>
+                </div>
+              </div>
+
+              <!-- Tarjeta Desplegable de Reconocimiento Visual Gemini (como en Buscador de Mercaderías) -->
+              <div class="vision-ai-card hidden" id="prodVisionAiCard" style="margin-top: 10px;">
+                <div class="vision-ai-header">
+                  <div class="vision-ai-badge">
+                    <span class="sparkle-icon">✨</span>
+                    <span id="prodVisionAiBadgeText">Reconocimiento Gemini Vision</span>
+                  </div>
+                  <span class="vision-ai-category" id="prodVisionCategory">Categoría</span>
+                </div>
+                <div class="vision-ai-body">
+                  <div class="vision-ai-title-row">
+                    <h4 id="prodVisionTitle" class="vision-ai-title" style="margin: 0; font-size: 1rem; color: var(--text-main);">Producto</h4>
+                    <span id="prodVisionModel" class="vision-ai-model">Modelo</span>
+                  </div>
+                  <div class="vision-ai-footer-row" style="margin-top: 8px;">
+                    <span>Precio ref. mercado sugerido:</span>
+                    <strong id="prodVisionPrice" class="vision-price-highlight">S/ 0.00</strong>
+                    <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: auto;">✅ Datos cargados en el formulario</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-row-3">
+              <div class="form-group">
+                <label for="prodStock">Stock Inicial (Uds) *</label>
+                <input type="number" id="prodStock" min="0" value="10" required>
+              </div>
+              <div class="form-group">
+                <label for="prodCost">Costo Real Unit. (<span class="currency-symbol">S/</span>) *</label>
+                <input type="number" id="prodCost" min="0" step="0.5" value="120.00" required>
+              </div>
+              <div class="form-group">
+                <label for="prodPrice">Precio Venta Sug. (<span class="currency-symbol">S/</span>) *</label>
+                <input type="number" id="prodPrice" min="0" step="0.5" value="230.00" required>
+              </div>
+            </div>
+
+            <!-- CÁLCULO AUTOMÁTICO EN TIEMPO REAL MIENTRAS SE DIGITAN MONTOS -->
+            <div class="live-calc-box">
+              <div class="calc-metric">
+                <span class="calc-label">Margen Unitario:</span>
+                <span class="calc-value profit" id="calcUnitMargin">S/ 110.00</span>
+                <span class="calc-pill" id="calcMarginPct">+91.7%</span>
+              </div>
+              <div class="calc-separator"></div>
+              <div class="calc-metric">
+                <span class="calc-label">Ganancia Potencial Total:</span>
+                <span class="calc-value highlight" id="calcTotalProfit">S/ 1,100.00</span>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="prodNotes">Notas / Ubicación en Almacén</label>
+              <textarea id="prodNotes" rows="2" placeholder="Ej. Estante A3, lote aduana mayo..."></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block" id="btnSaveProduct">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14"></path>
+                <path d="M12 5v14"></path>
+              </svg>
+              Guardar en Mercadería Propia
+            </button>
+          </form>
+        </div>
+
+        <!-- LISTADO DE MERCADERÍA EN MANO -->
+        <div class="inventory-list-card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Inventario en Mano</h2>
+              <p class="card-subtitle">Productos disponibles para incorporar en tus lotes de venta</p>
+            </div>
+            <div class="inventory-filter-box">
+              <input type="text" id="inventorySearchFilter" placeholder="Filtrar inventario..." class="input-xs">
+            </div>
+          </div>
+
+          <div class="inventory-table-container">
+            <table class="data-table" id="inventoryTable">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Estado</th>
+                  <th>Stock</th>
+                  <th>Costo Real</th>
+                  <th>Precio Venta</th>
+                  <th>Margen Unit.</th>
+                  <th>Ganancia Total</th>
+                  <th class="text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="inventoryTableBody">
+                <!-- Se puebla dinámicamente -->
+              </tbody>
+            </table>
+
+            <div id="inventoryEmptyState" class="empty-state hidden">
+              <div class="empty-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect>
+                  <circle cx="9" cy="9" r="2"></circle>
+                </svg>
+              </div>
+              <h4>No hay productos en inventario</h4>
+              <p>Registra tu primer ítem usando el formulario a la izquierda.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============================================================== -->
+
+    
+
+
+
+
+    <!-- ============================================================== -->
+    <!-- SECCIÓN C: LISTA SUMATORIA (LOTE DE OPERACIÓN) -->
+    <!-- ============================================================== -->
+    <section id="tab-lot" class="tab-content">
+      
+      <!-- RESUMEN FINANCIERO EN TIEMPO REAL -->
+      <div class="kpi-dashboard-grid">
+        <div class="kpi-card kpi-blue">
+          <div class="kpi-icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"></path>
+            </svg>
+          </div>
+          <div class="kpi-details">
+            <span class="kpi-label">Inversión Nueva Requerida</span>
+            <span class="kpi-val" id="kpiNewInvestment">S/ 0.00</span>
+            <span class="kpi-desc">Solo compras externas al proveedor</span>
+          </div>
+        </div>
+
+        <div class="kpi-card kpi-purple">
+          <div class="kpi-icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path>
+            </svg>
+          </div>
+          <div class="kpi-details">
+            <span class="kpi-label">Stock Propio Comprometido</span>
+            <span class="kpi-val" id="kpiOwnStockValue">S/ 0.00</span>
+            <span class="kpi-desc">Costo de tus unidades en almacén</span>
+          </div>
+        </div>
+
+        <div class="kpi-card kpi-emerald">
+          <div class="kpi-icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="1" x2="12" y2="23"></line>
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+            </svg>
+          </div>
+          <div class="kpi-details">
+            <span class="kpi-label">Ingreso Bruto Proyectado</span>
+            <span class="kpi-val" id="kpiGrossIncome">S/ 0.00</span>
+            <span class="kpi-desc">Venta estimada de todo el lote</span>
+          </div>
+        </div>
+
+        <div class="kpi-card kpi-gold">
+          <div class="kpi-icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+              <polyline points="17 6 23 6 23 12"></polyline>
+            </svg>
+          </div>
+          <div class="kpi-details">
+            <span class="kpi-label">Ganancia Neta del Lote</span>
+            <div class="kpi-flex-value">
+              <span class="kpi-val" id="kpiNetProfit">S/ 0.00</span>
+              <span class="kpi-badge-margin" id="kpiAverageMargin">0.0%</span>
+            </div>
+            <span class="kpi-desc">Margen neto consolidado</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- TABLA DETALLADA DEL LOTE -->
+      <div class="lot-table-card">
+        <div class="lot-header">
+          <div>
+            <h2 class="card-title">Composición del Lote de Operación</h2>
+            <p class="card-subtitle">Combina adquisiciones externas con tu stock en mano para maximizar el margen promedio</p>
+          </div>
+          <div class="lot-actions">
+            <button class="btn btn-primary btn-sm btn-action-lot-sell" id="btnOpenConfirmLotSalesModal" title="Convertir todos los ítems del lote en ventas registradas y descontar stock">
+              💰 Registrar Ventas del Lote
+            </button>
+            <button class="btn btn-outline-primary btn-sm" id="btnExportLotCsv" title="Descargar datos en formato CSV para Google Sheets o Microsoft Excel">
+              📊 Exportar CSV
+            </button>
+            <button class="btn btn-success btn-sm" id="btnExportLotSummary" title="Ver informe ejecutivo para copiar o descargar">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              Informe TXT
+            </button>
+            <button class="btn btn-ai-sparkle btn-sm" id="btnOpenSocialPostModal" title="Generar imagen publicitaria y copy para redes con IA">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path>
+              </svg>
+              Post Redes IA
+            </button>
+            <button class="btn btn-outline-danger btn-sm" id="btnClearLot" title="Vaciar lote de operación">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6h18"></path>
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+              </svg>
+              Vaciar
+            </button>
+          </div>
+        </div>
+
+        <div class="lot-table-wrap">
+          <table class="data-table" id="lotTable">
+            <thead>
+              <tr>
+                <th>Origen / Tienda</th>
+                <th>Producto</th>
+                <th>Costo Unit.</th>
+                <th>Precio Venta</th>
+                <th>Cantidad</th>
+                <th>Subtotal Costo</th>
+                <th>Subtotal Venta</th>
+                <th>Ganancia Estimada</th>
+                <th class="text-right">Quitar</th>
+              </tr>
+            </thead>
+            <tbody id="lotTableBody">
+              <!-- Renderizado de ítems del lote -->
+            </tbody>
+          </table>
+
+          <div id="lotEmptyState" class="empty-state">
+            <div class="empty-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="8" cy="21" r="1"></circle>
+                <circle cx="19" cy="21" r="1"></circle>
+                <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"></path>
+              </svg>
+            </div>
+            <h4>El lote de operación está vacío</h4>
+            <p>Suma oportunidades desde el <strong>Buscador de Mercaderías</strong> o agrega ítems desde tu <strong>Mercadería Propia</strong>.</p>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ============================================================== -->
+
+    
+
+    <!-- ============================================================== -->
+    <!-- SECCIÓN D: REGISTRO DE VENTAS & CONTROL DE STOCK REAL -->
+    <!-- ============================================================== -->
+    <section id="tab-sales" class="tab-content">
+      <!-- STRIP DE MÉTRICAS / KPIS DE VENTAS -->
+      <div class="kpi-strip sales-kpi-grid">
+        <div class="kpi-card kpi-blue">
+          <div class="kpi-icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="1" x2="12" y2="23"></line>
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+            </svg>
+          </div>
+          <div class="kpi-details">
+            <span class="kpi-label">Ingresos por Ventas</span>
+            <span class="kpi-val" id="kpiSalesRevenue">S/ 0.00</span>
+            <span class="kpi-desc">Total bruto cobrado a clientes</span>
+          </div>
+        </div>
+
+        <div class="kpi-card kpi-purple">
+          <div class="kpi-icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1"></path>
+              <path d="M18 8h4a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-4"></path>
+              <circle cx="8" cy="12" r="2"></circle>
+            </svg>
+          </div>
+          <div class="kpi-details">
+            <span class="kpi-label">Costo de Mercadería</span>
+            <span class="kpi-val" id="kpiSalesCost">S/ 0.00</span>
+            <span class="kpi-desc">Inversión en unidades vendidas</span>
+          </div>
+        </div>
+
+        <div class="kpi-card kpi-gold">
+          <div class="kpi-icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+              <polyline points="17 6 23 6 23 12"></polyline>
+            </svg>
+          </div>
+          <div class="kpi-details">
+            <span class="kpi-label">Ganancia Neta Real Acumulada</span>
+            <div class="kpi-flex-value">
+              <span class="kpi-val" id="kpiSalesProfit">S/ 0.00</span>
+              <span class="kpi-badge-margin" id="kpiSalesMargin">0.0%</span>
+            </div>
+            <span class="kpi-desc">Beneficio líquido en bolsillo</span>
+          </div>
+        </div>
+
+        <div class="kpi-card kpi-emerald">
+          <div class="kpi-icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+          </div>
+          <div class="kpi-details">
+            <span class="kpi-label">Operaciones & Unidades</span>
+            <span class="kpi-val" id="kpiSalesCount">0</span>
+            <span class="kpi-desc" id="kpiSalesUnits">0 unidades entregadas</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- LAYOUT PRINCIPAL DE VENTAS: 2 COLUMNAS (FORMULARIO RÁPIDO + HISTORIAL) -->
+      <div class="inventory-layout sales-layout">
+        <!-- COLUMNA 1: FORMULARIO REGISTRAR VENTA -->
+        <div class="inventory-form-card sales-form-card">
+          <div class="form-header">
+            <div class="form-header-info">
+              <span class="header-icon-pill">💰</span>
+              <div>
+                <h3 class="card-title">Registrar Nueva Venta</h3>
+                <p class="card-subtitle">Descuenta automáticamente stock de almacén y asegura tu beneficio real</p>
+              </div>
+            </div>
+          </div>
+
+          <form id="formNewSale" class="inventory-form custom-form">
+            <!-- Selector de tipo de producto: De Inventario vs Manual -->
+            <div class="form-group">
+              <label class="form-label">Origen de la Mercadería:</label>
+              <div class="source-toggle-group">
+                <label class="source-radio-pill active" id="labelSourceInventory">
+                  <input type="radio" name="saleProductSourceRadio" value="inventory" checked>
+                  <span>📦 Mercadería Propia</span>
+                </label>
+                <label class="source-radio-pill" id="labelSourceManual">
+                  <input type="radio" name="saleProductSourceRadio" value="manual">
+                  <span>✍️ Venta Libre / Manual</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Selector de Producto de Inventario Propio -->
+            <div class="form-group" id="groupSaleInventorySelect">
+              <label for="saleInventoryProductSelect">Producto de Mercadería Propia: <span class="required">*</span></label>
+              <select id="saleInventoryProductSelect" class="form-control">
+                <option value="">-- Elige un producto en mano --</option>
+              </select>
+              <div class="stock-live-alert hidden" id="saleStockAlert">
+                <span class="stock-alert-dot"></span>
+                <span id="saleStockAlertText">Stock disponible: 0 unidades</span>
+              </div>
+            </div>
+
+            <!-- Nombre de Producto (editable o completado) -->
+            <div class="form-group">
+              <label for="saleProductName">Nombre del Producto Vendido: <span class="required">*</span></label>
+              <input type="text" id="saleProductName" class="form-control" placeholder="Ej. Audífonos ANC Bluetooth" required>
+            </div>
+
+            <!-- Cantidad y Canal de Venta -->
+            <div class="form-row form-row-2">
+              <div class="form-group">
+                <label for="saleQuantity">Cantidad Vendida: <span class="required">*</span></label>
+                <input type="number" id="saleQuantity" class="form-control" min="1" value="1" required>
+              </div>
+              <div class="form-group">
+                <label for="saleChannel">Canal de Venta:</label>
+                <select id="saleChannel" class="form-control">
+                  <option value="WhatsApp" selected>📱 WhatsApp</option>
+                  <option value="Marketplace">👥 Facebook Marketplace</option>
+                  <option value="Tienda Web">🌐 Tienda Web / E-comm</option>
+                  <option value="Venta Directa">🤝 Venta Directa / Efectivo</option>
+                  <option value="Mercado Libre">📦 Mercado Libre</option>
+                  <option value="Instagram">📸 Instagram / TikTok</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Costo Unitario y Precio de Venta Unitario -->
+            <div class="form-row form-row-2">
+              <div class="form-group">
+                <label for="saleUnitCost">Costo Unit. Compra (<span class="currency-symbol">S/</span>): <span class="required">*</span></label>
+                <input type="number" id="saleUnitCost" class="form-control" step="0.01" min="0" placeholder="0.00" required>
+              </div>
+              <div class="form-group">
+                <label for="saleUnitPrice">Precio Unit. Cobrado (<span class="currency-symbol">S/</span>): <span class="required">*</span></label>
+                <input type="number" id="saleUnitPrice" class="form-control" step="0.01" min="0" placeholder="0.00" required>
+              </div>
+            </div>
+
+            <!-- Tarifa de Envío y Despacho -->
+            <div class="form-row form-row-2">
+              <div class="form-group">
+                <label for="saleShippingRateSelect">Tarifa de Envío / Despacho:</label>
+                <select id="saleShippingRateSelect" class="form-control">
+                  <option value="" data-cost="0">📦 Sin envío / Recojo en mano (S/ 0.00)</option>
+                  <!-- Cargado dinámicamente de /api/shipping-rates -->
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="saleCommissionDelivery">Comisión / Flete Descontado (<span class="currency-symbol">S/</span>):</label>
+                <input type="number" id="saleCommissionDelivery" class="form-control" step="0.01" min="0" value="0.00" placeholder="0.00">
+              </div>
+            </div>
+
+            <!-- Datos del Cliente (CRM Automático) -->
+            <div class="form-row form-row-2">
+              <div class="form-group">
+                <label for="saleCustomerName">Nombre del Cliente (opcional):</label>
+                <input type="text" id="saleCustomerName" class="form-control" placeholder="Ej. Juan Pérez">
+              </div>
+              <div class="form-group">
+                <label for="saleCustomerPhone">WhatsApp del Cliente (opcional):</label>
+                <input type="tel" id="saleCustomerPhone" class="form-control" placeholder="Ej. 987654321">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="saleCustomerDistrict">Distrito / Ciudad del Cliente (opcional):</label>
+              <input type="text" id="saleCustomerDistrict" class="form-control" placeholder="Ej. San Miguel, Lima o Trujillo">
+            </div>
+
+            <!-- Notas de la venta -->
+            <div class="form-group">
+              <label for="saleNotes">Notas de la Entrega (opcional):</label>
+              <textarea id="saleNotes" class="form-control" rows="2" placeholder="Ej. Cliente pagó por Yape, entrega Olva Courier"></textarea>
+            </div>
+
+            <!-- CAJA DE CÁLCULO EN VIVO DE LA GANANCIA REAL -->
+            <div class="calc-preview-card sale-calc-preview">
+              <div class="calc-preview-header">
+                <span>Resultado Financiero de la Operación</span>
+                <span class="badge-profit" id="saleCalcMarginPct">+0.0%</span>
+              </div>
+              <div class="calc-preview-grid">
+                <div class="calc-item">
+                  <span class="calc-lbl">Total Cobrado:</span>
+                  <span class="calc-val" id="saleCalcGross">S/ 0.00</span>
+                </div>
+                <div class="calc-item">
+                  <span class="calc-lbl">Costo Total:</span>
+                  <span class="calc-val" id="saleCalcCost">S/ 0.00</span>
+                </div>
+                <div class="calc-item">
+                  <span class="calc-lbl">Comisión/Flete:</span>
+                  <span class="calc-val" id="saleCalcFees">-S/ 0.00</span>
+                </div>
+                <div class="calc-item calc-total">
+                  <span class="calc-lbl">Ganancia Neta Real:</span>
+                  <span class="calc-val text-success" id="saleCalcNetProfit">+S/ 0.00</span>
+                </div>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block btn-lg" id="btnSubmitSale">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>Registrar Venta & Descontar Stock</span>
+            </button>
+          </form>
+        </div>
+
+        <!-- COLUMNA 2: TABLA DE HISTORIAL DE VENTAS -->
+        <div class="inventory-table-card sales-table-card">
+          <div class="table-card-header">
+            <div>
+              <h3 class="card-title">Historial de Ventas & Operaciones</h3>
+              <p class="card-subtitle">Registro cronológico de ventas concretadas y ganancias netas percibidas</p>
+            </div>
+            <div class="sales-header-actions">
+              <button class="btn btn-outline-primary btn-sm" id="btnExportSalesCsv" title="Exportar historial a CSV para Excel o Google Sheets">
+                📊 Exportar CSV
+              </button>
+              <div class="sales-filter-wrap">
+                <input type="text" id="salesSearchFilter" class="form-control form-control-sm" placeholder="Buscar por producto, canal o nota...">
+              </div>
+            </div>
+          </div>
+
+          <div class="inventory-table-wrap sales-table-wrap">
+            <table class="data-table" id="salesTable">
+              <thead>
+                <tr>
+                  <th class="th-date">Fecha</th>
+                  <th class="th-product">Producto</th>
+                  <th class="th-channel">Canal</th>
+                  <th class="th-qty text-center">Cant.</th>
+                  <th class="th-price text-right">P. Unit.</th>
+                  <th class="th-total text-right">Total</th>
+                  <th class="th-fee text-right">Comis./Flete</th>
+                  <th class="th-profit text-right">Ganancia Neta</th>
+                  <th class="th-action text-right">Acción</th>
+                </tr>
+              </thead>
+              <tbody id="salesTableBody">
+                <!-- Se poblará vía JavaScript -->
+              </tbody>
+            </table>
+
+            <div id="salesEmptyState" class="empty-state hidden">
+              <div class="empty-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                  <line x1="8" y1="21" x2="16" y2="21"></line>
+                  <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+              </div>
+              <h4>No hay ventas registradas aún</h4>
+              <p>Utiliza el formulario de la izquierda o el botón <strong>"💰 Vender"</strong> en tu inventario para registrar tu primera operación.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================== -->
+
+    
+
+
+
+
+    <!-- ============================================================== -->
+    <!-- SECCIÓN E: TIENDA WEB & PEDIDOS CLIENTE -->
+    <!-- ============================================================== -->
+    <section id="tab-web-orders" class="tab-content">
+      <!-- CONTROL DE PUBLICACIÓN EN INTERNET ($0 CLOUDFLARE TUNNEL) -->
+      <div class="card" style="margin-bottom: 1.5rem; background: linear-gradient(135deg, rgba(37, 99, 235, 0.1) 0%, rgba(16, 185, 129, 0.08) 100%); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 12px; padding: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 44px; height: 44px; border-radius: 10px; background: rgba(59, 130, 246, 0.2); color: #60a5fa; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">
+              🌐
+            </div>
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: #ffffff;">Publicar Tienda Online en Internet ($0)</h3>
+                <span class="badge" id="tunnelCardStatusBadge" style="background: rgba(148, 163, 184, 0.2); color: #94a3b8; font-size: 0.75rem; padding: 2px 8px; border-radius: 12px;">● Local (Sin publicar)</span>
+              </div>
+              <p style="margin: 4px 0 0 0; font-size: 0.85rem; color: var(--text-muted);" id="tunnelCardDesc">
+                Conecta tu catálogo web a internet con Cloudflare Tunnel gratuito. Comparte el enlace público o código QR con clientes para recibir pedidos en vivo.
+              </p>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <button type="button" class="btn btn-primary" id="btnTunnelInlineStart">
+              <span>🚀</span> Publicar Tienda Online ($0)
+            </button>
+            <button type="button" class="btn btn-danger hidden" id="btnTunnelInlineStop">
+              <span>⏹️</span> Detener Publicación
+            </button>
+            <button type="button" class="btn btn-outline btn-publish-tunnel-trigger" id="btnTunnelInlineOpenModal">
+              <span>📱</span> Ver Código QR & Opciones
+            </button>
+          </div>
+        </div>
+
+        <!-- Fila con URL pública activa -->
+        <div id="tunnelInlineActiveRow" class="hidden" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 280px;">
+            <span style="font-size: 0.85rem; font-weight: 600; color: #10b981; white-space: nowrap;">Enlace Público:</span>
+            <input type="text" id="tunnelInlineUrlInput" readonly class="form-control" style="font-family: monospace; font-size: 0.85rem; background: rgba(0,0,0,0.3); color: #34d399; font-weight: 600;" value="">
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnTunnelInlineCopy">
+              📋 Copiar Enlace
+            </button>
+            <a href="#" id="btnTunnelInlineVisit" target="_blank" class="btn btn-success btn-sm">
+              Visitar Tienda ↗
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- HEADER Y KPIS DE TIENDA WEB -->
+      <div class="sales-kpi-grid" style="margin-bottom: 1.5rem;">
+        <div class="sales-kpi-card" style="border-left: 4px solid #10b981;">
+          <span class="sales-kpi-lbl">Pedidos Web Pendientes</span>
+          <div class="sales-kpi-val text-warning" id="kpiWebPendingOrders">0</div>
+          <span class="sales-kpi-sub">Requieren confirmación</span>
+        </div>
+
+        <div class="sales-kpi-card" style="border-left: 4px solid var(--primary);">
+          <span class="sales-kpi-lbl">Total Pedidos Recibidos</span>
+          <div class="sales-kpi-val" id="kpiWebTotalOrders">0</div>
+          <span class="sales-kpi-sub" id="kpiWebApprovedOrders">0 aprobados</span>
+        </div>
+
+        <div class="sales-kpi-card" style="border-left: 4px solid #8b5cf6;">
+          <span class="sales-kpi-lbl">Ventas Facturadas Web</span>
+          <div class="sales-kpi-val text-success" id="kpiWebTotalRevenue">S/ 0.00</div>
+          <span class="sales-kpi-sub">Ingresos vía tienda online</span>
+        </div>
+
+        <div class="sales-kpi-card" style="display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 0.5rem; background: rgba(37, 99, 235, 0.08); border: 1px dashed var(--primary-border);">
+          <span style="font-size: 0.82rem; font-weight: 700; color: #ffffff;">Enlace de tu Tienda Online:</span>
+          <div style="display: flex; gap: 6px; width: 100%;">
+            <a href="/tienda" target="_blank" class="btn btn-primary btn-sm" id="storeTabOpenStoreBtn" style="flex: 1; text-align: center;">
+              🏪 Ver Tienda ↗
+            </a>
+            <button type="button" class="btn btn-outline btn-sm btn-publish-tunnel-trigger" id="btnStoreTabPublishTunnel" title="Publicar en Internet con Cloudflare Tunnel ($0)">
+              🌐 Publicar ($0)
+            </button>
+          </div>
+          <span style="font-size: 0.72rem; color: var(--text-muted);" id="storeTabTunnelStatusHint">Local: 127.0.0.1:8000</span>
+        </div>
+      </div>
+
+      <!-- LAYOUT RESPONSIVO: CONFIGURACIÓN A LA IZQUIERDA Y PEDIDOS A LA DERECHA -->
+      <div class="inventory-layout">
+        
+        <!-- COLUMNA 1: CONFIGURACIÓN DE TIENDA Y QR -->
+        <div class="inventory-form-card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Configuración de Tienda</h2>
+              <p class="card-subtitle">Personaliza tu marca comercial, WhatsApp y códigos QR de cobro</p>
+            </div>
+          </div>
+
+          <form id="formStoreConfig" class="inventory-form custom-form">
+            <div class="form-group">
+              <label for="storeCfgName">Nombre de la Tienda Web: <span class="required">*</span></label>
+              <input type="text" id="storeCfgName" class="form-control" placeholder="Ej. KipuStock Store" required>
+            </div>
+
+            <div class="form-group">
+              <label for="storeCfgPhone">WhatsApp de Ventas: <span class="required">*</span></label>
+              <input type="tel" id="storeCfgPhone" class="form-control" placeholder="Ej. 51944830586" required>
+              <span class="field-hint">Número oficial donde los clientes enviarán sus pedidos</span>
+            </div>
+
+            <div class="form-group">
+              <label for="storeCfgWelcome">Mensaje de Bienvenida:</label>
+              <textarea id="storeCfgWelcome" class="form-control" rows="2" placeholder="Mensaje principal para tus clientes..."></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="storeCfgInstructions">Instrucciones de Pago (Yape / Plin):</label>
+              <textarea id="storeCfgInstructions" class="form-control" rows="2" placeholder="Ej. Enviar constancia para despacho inmediato..."></textarea>
+            </div>
+
+            <!-- SUBIDA QR YAPE -->
+            <div class="form-group" style="background: rgba(116, 34, 132, 0.08); border: 1px solid rgba(116, 34, 132, 0.3); padding: 0.85rem; border-radius: 8px;">
+              <label style="color: #d946ef; font-weight: 700; font-size: 0.85rem;">💜 Código QR de Cobro Yape:</label>
+              <div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 0.35rem;">
+                <img id="storeCfgQrYapePreview" src="" alt="QR Yape" style="width: 60px; height: 60px; object-fit: contain; background: #fff; border-radius: 6px; display: none; padding: 2px;">
+                <div style="flex: 1;">
+                  <input type="file" id="storeCfgQrYapeFile" accept="image/*" style="font-size: 0.78rem;">
+                  <span id="storeCfgQrYapeStatus" class="field-hint">Sube tu imagen o captura de QR Yape</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- SUBIDA QR PLIN -->
+            <div class="form-group" style="background: rgba(0, 180, 216, 0.08); border: 1px solid rgba(0, 180, 216, 0.3); padding: 0.85rem; border-radius: 8px;">
+              <label style="color: #38bdf8; font-weight: 700; font-size: 0.85rem;">💙 Código QR de Cobro Plin:</label>
+              <div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 0.35rem;">
+                <img id="storeCfgQrPlinPreview" src="" alt="QR Plin" style="width: 60px; height: 60px; object-fit: contain; background: #fff; border-radius: 6px; display: none; padding: 2px;">
+                <div style="flex: 1;">
+                  <input type="file" id="storeCfgQrPlinFile" accept="image/*" style="font-size: 0.78rem;">
+                  <span id="storeCfgQrPlinStatus" class="field-hint">Sube tu imagen o captura de QR Plin</span>
+                </div>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block btn-lg" id="btnSaveStoreConfig">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span>Guardar Configuración de Tienda</span>
+            </button>
+          </form>
+        </div>
+
+        <!-- COLUMNA 2: TABLA DE PEDIDOS WEB RECIBIDOS -->
+        <div class="inventory-table-card">
+          <div class="table-card-header">
+            <div>
+              <h3 class="card-title">Bandeja de Pedidos Web</h3>
+              <p class="card-subtitle">Órdenes generadas por clientes en la tienda pública con validación de stock</p>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <button class="btn btn-outline-primary btn-sm" id="btnRefreshWebOrders" title="Actualizar pedidos">
+                🔄 Refrescar
+              </button>
+            </div>
+          </div>
+
+          <div class="table-filter-wrap">
+            <input type="text" id="webOrdersFilter" class="form-control form-control-sm" placeholder="Filtrar por código, cliente o teléfono...">
+          </div>
+
+          <div class="table-responsive">
+            <table class="data-table" id="webOrdersTable">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Fecha</th>
+                  <th>Cliente</th>
+                  <th>Entrega</th>
+                  <th>Pago</th>
+                  <th class="text-right">Total</th>
+                  <th class="text-center">Estado</th>
+                  <th class="text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="webOrdersTableBody">
+                <!-- Se poblará vía JavaScript -->
+              </tbody>
+            </table>
+
+            <div id="webOrdersEmptyState" class="empty-state hidden">
+              <div class="empty-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                  <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                </svg>
+              </div>
+              <h4>No hay pedidos web recibidos aún</h4>
+              <p>Cuando un cliente compre desde tu tienda online pública, sus pedidos aparecerán aquí listos para ser aprobados.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================== -->
+
+    
+
+      <!-- ============================================================== -->
+    <!-- SECCIÓN F: CAMPAÑAS PUBLICITARIAS Y REDES SOCIALES (COSTO $0) -->
+    <!-- ============================================================== -->
+    <section id="tab-campaigns" class="tab-content">
+      <div class="campaign-header-card">
+        <div class="campaign-header-info">
+          <div class="campaign-header-badge">🚀 MARKETING DIGITAL & VENTAS CON IA</div>
+          <h2 class="campaign-header-title">Generador de Campañas para Redes Sociales</h2>
+          <p class="campaign-header-desc">
+            Crea en 1 clic paquetes publicitarios completos: <strong>Imágenes 1:1 (Feed/Marketplace)</strong> y <strong>9:16 (Stories/Reels/WhatsApp)</strong> en alta definición + <strong>copys persuasivos multicanal</strong> con enlaces directos a tu tienda. Costo $0 garantizado.
+          </p>
+        </div>
+        <div class="campaign-header-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="btn btn-primary btn-publish-tunnel-trigger" id="btnCampaignPublishTunnel" style="white-space: nowrap;">
+            <span>🌐</span> Publicar Tienda Online ($0)
+          </button>
+          <a href="/tienda" target="_blank" class="btn btn-outline" id="campaignViewStoreLink" style="white-space: nowrap;">
+            🏪 Ver Tienda en Vivo ↗
+          </a>
+        </div>
+      </div>
+
+      <!-- FORMULARIO DE GENERACIÓN DE CAMPAÑA -->
+      <div class="card campaign-generator-card" style="margin-bottom: 2rem;">
+        <h3 class="section-title" style="margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;">
+          <span>⚙️</span> Configurar Nueva Campaña
+        </h3>
+
+        <form id="formCampaignGenerator" class="campaign-form-grid">
+          <!-- Columna 1: Selección de producto -->
+          <div class="form-group campaign-full-col">
+            <label for="campaignSelectProduct">Elegir Producto (Inventario Propio o Arbitraje del Lote):</label>
+            <select id="campaignSelectProduct" class="form-control select-campaign-product">
+              <option value="">-- Seleccionar producto del inventario o lote --</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="campaignInputTitle">Nombre del Producto / Oferta: *</label>
+            <input type="text" id="campaignInputTitle" class="form-control" placeholder="Ej. Taladro Percutor Inalámbrico 20V Brushless" required>
+          </div>
+
+          <div class="form-group">
+            <label for="campaignInputModel">Modelo / Especificación:</label>
+            <input type="text" id="campaignInputModel" class="form-control" placeholder="Ej. Brushless Motor + 2 Baterías">
+          </div>
+
+          <div class="form-group">
+            <label for="campaignSelectEstado">Estado / Condición:</label>
+            <select id="campaignSelectEstado" class="form-control">
+              <option value="Nuevo">Nuevo (Garantía Oficial)</option>
+              <option value="Saldo">Saldo de Importación</option>
+              <option value="Liquidación">Liquidación de Lote</option>
+              <option value="Arbitraje Ocasión">Arbitraje / Ocasión</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="campaignInputPrice">Precio Regular de Venta (S/): *</label>
+            <input type="number" step="0.10" id="campaignInputPrice" class="form-control" placeholder="Ej. 160.00" required>
+          </div>
+
+          <div class="form-group">
+            <label for="campaignInputOfferPrice">Precio Oferta / Promoción (S/) <span style="font-weight: normal; color: var(--text-muted);">(opcional)</span>:</label>
+            <input type="number" step="0.10" id="campaignInputOfferPrice" class="form-control" placeholder="Ej. 129.00 (muestra antes/ahora)">
+          </div>
+
+          <div class="form-group">
+            <label for="campaignInputMargin">Margen / Beneficio Estimado (%):</label>
+            <input type="number" step="0.1" id="campaignInputMargin" class="form-control" placeholder="Ej. 35.5">
+          </div>
+
+          <div class="form-group">
+            <label for="campaignInputStock">Stock Disponible (Unidades):</label>
+            <input type="number" id="campaignInputStock" class="form-control" placeholder="Ej. 10">
+          </div>
+
+          <div class="form-group">
+            <label for="campaignSelectTone">Tono y Enfoque de la Campaña:</label>
+            <select id="campaignSelectTone" class="form-control">
+              <option value="Urgencia / Oferta Flash" selected>⚡ Urgencia / Oferta Flash (Alta conversión)</option>
+              <option value="Profesional / Confianza">⭐ Profesional / Confianza (Calidad y garantía)</option>
+              <option value="Novedad / Tendencia">🔥 Novedad / Tendencia (Impacto viral y moderno)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="campaignInputStoreUrl">Enlace de Compra o Tienda Web:</label>
+            <input type="text" id="campaignInputStoreUrl" class="form-control" placeholder="http://localhost:8000/tienda">
+          </div>
+
+          <div class="form-group">
+            <label for="campaignInputWa">WhatsApp de Ventas:</label>
+            <input type="tel" id="campaignInputWa" class="form-control" placeholder="51944830586">
+          </div>
+
+          <!-- Selección de Formatos Gráficos (1:1 y 9:16) -->
+          <div class="form-group campaign-full-col" style="background: rgba(255,255,255,0.03); padding: 12px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: var(--text-main);">🖼️ Formatos Gráficos a Generar:</label>
+            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+              <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem;">
+                <input type="checkbox" id="campaignFmt1x1" value="1:1" checked style="accent-color: var(--primary);">
+                <span><strong>1:1 Feed / Catálogo</strong> (1080×1080 px)</span>
+              </label>
+              <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem;">
+                <input type="checkbox" id="campaignFmt9x16" value="9:16" checked style="accent-color: var(--primary);">
+                <span><strong>9:16 Historias / Reels / WhatsApp Status</strong> (1080×1920 px)</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Selección de Canales de Copys Publicitarios -->
+          <div class="form-group campaign-full-col" style="background: rgba(255,255,255,0.03); padding: 12px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: var(--text-main);">📢 Canales de Copys a Redactar:</label>
+            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+              <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem;">
+                <input type="checkbox" id="campaignChanMarketplace" value="marketplace" checked style="accent-color: var(--primary);">
+                <span>🏷️ Facebook Marketplace</span>
+              </label>
+              <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem;">
+                <input type="checkbox" id="campaignChanStories" value="stories_reels" checked style="accent-color: var(--primary);">
+                <span>🎬 Historias / Reels / TikTok</span>
+              </label>
+              <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem;">
+                <input type="checkbox" id="campaignChanWaBroadcast" value="whatsapp_broadcast" checked style="accent-color: var(--primary);">
+                <span>💬 Difusión WhatsApp</span>
+              </label>
+              <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem;">
+                <input type="checkbox" id="campaignChanEmail" value="email_promo" checked style="accent-color: var(--primary);">
+                <span>📧 Correo Promocional</span>
+              </label>
+            </div>
+          </div>
+
+          <input type="hidden" id="campaignHiddenPhotoUrl" value="">
+          <input type="hidden" id="campaignHiddenProdId" value="">
+          <input type="hidden" id="campaignHiddenItemLoteId" value="">
+
+          <div class="campaign-full-col" style="margin-top: 0.5rem; display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+            <button type="submit" class="btn btn-primary btn-generate-campaign-now" id="btnSubmitCampaign">
+              <span id="campaignBtnIcon">✨</span>
+              <span id="campaignBtnText">Generar Campaña Completa con IA (Imágenes + Copys)</span>
+            </button>
+            <span class="campaign-cost-badge">Costo $0 Garantizado</span>
+          </div>
+        </form>
+      </div>
+
+      <!-- ÁREA DE RESULTADOS DE LA CAMPAÑA (OCULTA INICIALMENTE) -->
+      <div id="campaignResultsContainer" class="campaign-results-wrap hidden">
+        <!-- BANNER DE ÉXITO Y DESCARGA DEL PACK -->
+        <div class="campaign-pack-banner">
+          <div class="campaign-pack-info">
+            <span class="campaign-pack-pill">📦 PAQUETE LISTO</span>
+            <h3 class="campaign-pack-title" id="resCampaignProdTitle">Campaña Generada</h3>
+            <p class="campaign-pack-sub" id="resCampaignToneSub">Tono: Urgencia / Oferta Flash • Listo para publicar</p>
+          </div>
+          <div class="campaign-pack-actions">
+            <a href="#" id="btnDownloadCampaignZip" class="btn btn-success btn-lg btn-download-pack" download>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span>Descargar Pack Completo (.ZIP)</span>
+            </a>
+            <button type="button" class="btn btn-whatsapp" id="btnCampaignShareDirectWa">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
+              <span>Compartir en WhatsApp</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 1. VISTA PREVIA LADO A LADO DE PIEZAS VISUALES -->
+        <h3 class="section-title" style="margin: 1.5rem 0 1rem 0;">📸 Piezas Visuales de Alta Definición (Pillow)</h3>
+        <div class="campaign-visuals-grid">
+          <!-- PIEZA 1: 1:1 FEED -->
+          <div class="campaign-visual-card" id="cardCampaignFeed1x1">
+            <div class="visual-card-header">
+              <span class="visual-format-badge">📐 Formato 1:1 (Cuadrado)</span>
+              <span class="visual-dims">1080 × 1080 px</span>
+            </div>
+            <p class="visual-desc">Para <strong>Feed de Instagram, Facebook y Catálogo Marketplace</strong>.</p>
+            <div class="visual-img-container visual-1x1-container">
+              <img id="imgCampaignFeed1x1" src="" alt="Pieza Cuadrada 1:1 Feed" class="campaign-preview-img">
+            </div>
+            <div class="visual-card-footer">
+              <a href="#" id="linkDownloadFeedSingle" class="btn btn-outline btn-sm" download="feed_1x1_1080x1080.png">
+                ⬇️ Descargar Imagen 1:1 (PNG)
+              </a>
+            </div>
+          </div>
+
+          <!-- PIEZA 2: 9:16 STORIES / REELS -->
+          <div class="campaign-visual-card" id="cardCampaignStory9x16">
+            <div class="visual-card-header">
+              <span class="visual-format-badge" style="background: rgba(139, 92, 246, 0.2); color: #c4b5fd; border-color: rgba(139, 92, 246, 0.4);">📱 Formato 9:16 (Vertical)</span>
+              <span class="visual-dims">1080 × 1920 px</span>
+            </div>
+            <p class="visual-desc">Para <strong>Estados de WhatsApp, Instagram Stories, Reels y TikTok</strong>.</p>
+            <div class="visual-img-container visual-9x16-container">
+              <img id="imgCampaignStory9x16" src="" alt="Pieza Vertical 9:16 Stories" class="campaign-preview-img">
+            </div>
+            <div class="visual-card-footer">
+              <a href="#" id="linkDownloadStorySingle" class="btn btn-outline btn-sm" download="story_9x16_1080x1920.png">
+                ⬇️ Descargar Imagen 9:16 (PNG)
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. COPYS PUBLICITARIOS MULTICANAL -->
+        <h3 class="section-title" style="margin: 2rem 0 1rem 0;">✍️ Copys Comerciales Optimizados por Canal (Google Gemini IA)</h3>
+        
+        <div class="copys-grid">
+          <!-- CANAL 1: FACEBOOK MARKETPLACE -->
+          <div class="copy-channel-card" id="cardCopyMarketplace">
+            <div class="copy-channel-header">
+              <div class="copy-channel-title">
+                <span>🏷️</span>
+                <strong>Facebook Marketplace</strong>
+              </div>
+              <button type="button" class="btn-copy-text" data-copy-id="copyTextMarketplace">
+                📋 Copiar Texto
+              </button>
+            </div>
+            <p class="copy-channel-sub">Título directo optimizado para búsquedas + descripción clara, formas de entrega y gancho comercial.</p>
+            <textarea id="copyTextMarketplace" class="copy-textarea" rows="8" readonly></textarea>
+          </div>
+
+          <!-- CANAL 2: HISTORIAS / REELS / TIKTOK / WHATSAPP STATUS -->
+          <div class="copy-channel-card" id="cardCopyStoriesReels">
+            <div class="copy-channel-header">
+              <div class="copy-channel-title">
+                <span>🎬</span>
+                <strong>Historias / Reels / TikTok</strong>
+              </div>
+              <button type="button" class="btn-copy-text" data-copy-id="copyTextStoriesReels">
+                📋 Copiar Texto
+              </button>
+            </div>
+            <p class="copy-channel-sub">Texto breve, directo y de alto impacto visual con gancho, propuesta de valor y CTA rápido.</p>
+            <textarea id="copyTextStoriesReels" class="copy-textarea" rows="8" readonly></textarea>
+          </div>
+
+          <!-- CANAL 3: DIFUSIÓN POR WHATSAPP -->
+          <div class="copy-channel-card" id="cardCopyWaBroadcast">
+            <div class="copy-channel-header">
+              <div class="copy-channel-title">
+                <span>💬</span>
+                <strong>Difusión por WhatsApp</strong>
+              </div>
+              <button type="button" class="btn-copy-text" data-copy-id="copyTextWaBroadcast">
+                📋 Copiar Texto
+              </button>
+            </div>
+            <p class="copy-channel-sub">Mensaje completo listo para reenviar a clientes con saludo cordial, precio, oferta y CTA directo.</p>
+            <textarea id="copyTextWaBroadcast" class="copy-textarea" rows="8" readonly></textarea>
+          </div>
+
+          <!-- CANAL 4: CORREO PROMOCIONAL -->
+          <div class="copy-channel-card" id="cardCopyEmailPromo">
+            <div class="copy-channel-header">
+              <div class="copy-channel-title">
+                <span>📧</span>
+                <strong>Correo Promocional</strong>
+              </div>
+              <button type="button" class="btn-copy-text" data-copy-id="copyTextEmailPromo">
+                📋 Copiar Texto
+              </button>
+            </div>
+            <p class="copy-channel-sub">Asunto directo y llamativo + cuerpo breve con beneficios clave, precio de ocasión y botón/enlace de compra.</p>
+            <textarea id="copyTextEmailPromo" class="copy-textarea" rows="8" readonly></textarea>
+          </div>
+        </div>
+
+        <!-- Campos ocultos compatibles para integraciones previas -->
+        <div style="display: none;">
+          <textarea id="copyTextFbIg"></textarea>
+          <textarea id="copyTextWaStatus"></textarea>
+          <textarea id="copyTextTikTok"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================== -->
+    <!-- SECCIÓN G: CRM DE CLIENTES, CALCULADORA DE ENVÍOS & COTIZADOR PDF -->
+    <!-- ============================================================== -->
+    <section id="tab-crm" class="tab-content">
+      <div class="campaign-header-card crm-banner-card">
+        <div class="campaign-header-info">
+          <div class="campaign-header-badge">👥 CRM COMERCIAL & LOGÍSTICA DE ENVÍOS</div>
+          <h2 class="campaign-header-title">Clientes, Calculadora de Envíos & Cotizador PDF</h2>
+          <p class="campaign-header-desc">
+            Calcula costos de despacho (Lima Local, Shalom o Olva Provincias), genera cotizaciones y notas de venta profesionales en <strong>PDF al instante (costo $0)</strong> y fideliza tu cartera de clientes con 1 clic a WhatsApp.
+          </p>
+        </div>
+        <div class="campaign-header-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="btn btn-primary" id="btnOpenNewClientModal" style="white-space: nowrap;">
+            <span>➕</span> Registrar Cliente
+          </button>
+          <button type="button" class="btn btn-outline" id="btnOpenShippingRatesModal" style="white-space: nowrap;">
+            <span>🚚</span> Tarifas de Envío
+          </button>
+        </div>
+      </div>
+
+      <!-- GRID DE DOS COLUMNAS -->
+      <div class="crm-main-grid">
+
+        <!-- COLUMNA 1: COTIZADOR RÁPIDO & CALCULADORA DE ENVÍO -->
+        <div class="card crm-quote-card">
+          <div class="card-header" style="padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); margin-bottom: 1rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <h3 class="card-title" style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 1.15rem;">
+                <span>📄</span> Cotizador & Calculadora de Envíos
+              </h3>
+              <span class="badge-profit" style="font-size: 0.75rem;">PDF Profesional $0</span>
+            </div>
+            <p class="card-subtitle" style="margin-top: 4px; font-size: 0.85rem; color: var(--text-muted);">
+              Genera tu presupuesto formal con despacho y datos de pago listo para enviar.
+            </p>
+          </div>
+
+          <form id="formQuoteGenerator">
+            <!-- 1. Datos del Cliente -->
+            <div class="crm-field-box">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <label class="form-label" style="font-weight: 600; font-size: 0.85rem; color: #93c5fd; margin: 0;">👤 Destinatario / Cliente:</label>
+                <button type="button" class="btn-link-action" id="btnToggleManualClient" style="font-size: 0.75rem; color: var(--primary);">
+                  + Ingresar datos manuales
+                </button>
+              </div>
+
+              <div id="quoteClientSelectWrap" class="form-group" style="margin-bottom: 8px;">
+                <select id="quoteClientSelect" class="form-control">
+                  <option value="">Seleccionar cliente del directorio...</option>
+                  <!-- Poblado dinámicamente -->
+                </select>
+              </div>
+
+              <div id="quoteClientManualFields" class="form-row form-row-2" style="margin-bottom: 8px;">
+                <div class="form-group" style="margin-bottom: 6px;">
+                  <input type="text" id="quoteClientName" class="form-control" placeholder="Nombre completo del cliente *" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 6px;">
+                  <input type="tel" id="quoteClientPhone" class="form-control" placeholder="WhatsApp / Teléfono (opcional)">
+                </div>
+              </div>
+
+              <div class="form-row form-row-2">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <input type="text" id="quoteClientDist" class="form-control" placeholder="Distrito / Ciudad (ej. Miraflores, Lima)">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <input type="text" id="quoteClientAddress" class="form-control" placeholder="Dirección de entrega (opcional)">
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Selección de Productos del Inventario Propio -->
+            <div class="crm-field-box" style="margin-top: 1rem;">
+              <label class="form-label" style="font-weight: 600; font-size: 0.85rem; color: #93c5fd; margin-bottom: 8px; display: block;">
+                📦 Productos a Cotizar:
+              </label>
+
+              <div class="quote-product-picker-row" style="margin-bottom: 8px;">
+                <div class="quote-product-picker-select">
+                  <select id="quoteProductSelect" class="form-control">
+                    <option value="">Selecciona un producto de Mercadería Propia...</option>
+                  </select>
+                </div>
+                <div class="quote-product-picker-qty">
+                  <input type="number" id="quoteProductQty" class="form-control" min="1" value="1" placeholder="Cant" title="Cantidad a cotizar">
+                </div>
+                <button type="button" class="btn btn-secondary quote-product-picker-btn" id="btnAddProductToQuote">
+                  + Añadir
+                </button>
+              </div>
+
+              <!-- Lista de ítems en cotización -->
+              <div class="table-responsive" style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 8px;">
+                <table class="inventory-table" style="font-size: 0.85rem;">
+                  <thead>
+                    <tr>
+                      <th>Producto</th>
+                      <th style="width: 55px; text-align: center;">Cant</th>
+                      <th style="width: 90px; text-align: right;">P. Unit</th>
+                      <th style="width: 90px; text-align: right;">Subtotal</th>
+                      <th style="width: 40px; text-align: center;"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="quoteItemsTableBody">
+                    <tr>
+                      <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1rem;">
+                        No has añadido productos. Selecciona arriba para armar la cotización.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Agregar ítem manual libre -->
+              <div style="text-align: right;">
+                <button type="button" class="btn-link-action" id="btnOpenManualItemRow" style="font-size: 0.78rem; color: var(--primary);">
+                  + ¿Agregar ítem manual no registrado en almacén?
+                </button>
+              </div>
+
+              <div id="quoteManualItemWrap" class="quote-manual-item-row hidden" style="margin-top: 8px;">
+                <div class="quote-manual-name">
+                  <input type="text" id="quoteManualItemName" class="form-control" placeholder="Nombre / Concepto del ítem manual">
+                </div>
+                <div class="quote-manual-qty">
+                  <input type="number" id="quoteManualItemQty" class="form-control" min="1" value="1" placeholder="Cant" title="Cantidad">
+                </div>
+                <div class="quote-manual-price">
+                  <input type="number" id="quoteManualItemPrice" class="form-control" step="0.01" min="0" placeholder="Precio S/" title="Precio unitario">
+                </div>
+                <button type="button" class="btn btn-secondary" id="btnAddManualItemBtn" style="padding: 0.55rem 0.9rem; white-space: nowrap;">
+                  + Añadir Ítem
+                </button>
+              </div>
+            </div>
+
+            <!-- 3. Tarifa de Despacho, Moneda y Condiciones -->
+            <div class="crm-field-box" style="margin-top: 1rem;">
+              <div class="form-row form-row-2">
+                <div class="form-group" style="margin-bottom: 8px;">
+                  <label for="quoteShippingRateSelect" class="form-label" style="font-size: 0.8rem; font-weight: 600;">Modalidad & Tarifa de Envío:</label>
+                  <select id="quoteShippingRateSelect" class="form-control">
+                    <!-- Cargado de /api/shipping-rates -->
+                  </select>
+                </div>
+                <div class="form-group" style="margin-bottom: 8px;">
+                  <label for="quoteCurrencySelect" class="form-label" style="font-size: 0.8rem; font-weight: 600;">Moneda del Documento:</label>
+                  <select id="quoteCurrencySelect" class="form-control">
+                    <option value="PEN" selected>Soles Peruanos (PEN - S/)</option>
+                    <option value="USD">Dólares Americanos (USD - $)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-row form-row-2">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="quoteValidityDays" class="form-label" style="font-size: 0.8rem; font-weight: 600;">Validez de la Oferta:</label>
+                  <select id="quoteValidityDays" class="form-control">
+                    <option value="1">1 día natural</option>
+                    <option value="2" selected>2 días (Recomendado)</option>
+                    <option value="3">3 días</option>
+                    <option value="5">5 días</option>
+                    <option value="7">7 días</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="quoteNotesInput" class="form-label" style="font-size: 0.8rem; font-weight: 600;">Nota especial (opcional):</label>
+                  <input type="text" id="quoteNotesInput" class="form-control" placeholder="Ej. Garantía 12 meses, sellado">
+                </div>
+              </div>
+            </div>
+
+            <!-- 4. Resumen Financiero en Vivo -->
+            <div class="calc-preview-card" style="margin-top: 1rem; border: 1px solid rgba(37,99,235,0.3); background: rgba(15,23,42,0.6);">
+              <div class="calc-preview-grid">
+                <div class="calc-item">
+                  <span class="calc-lbl">Subtotal Ítems:</span>
+                  <span class="calc-val" id="quoteSummarySubtotal">S/ 0.00</span>
+                </div>
+                <div class="calc-item">
+                  <span class="calc-lbl">Costo Despacho:</span>
+                  <span class="calc-val" id="quoteSummaryShipping">+S/ 0.00</span>
+                </div>
+                <div class="calc-item calc-total" style="grid-column: span 2;">
+                  <span class="calc-lbl" style="font-size: 1rem; color: #e2e8f0;">TOTAL A PAGAR:</span>
+                  <span class="calc-val" id="quoteSummaryTotal" style="font-size: 1.35rem; color: #4ade80;">S/ 0.00</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Botón Generar PDF -->
+            <div style="margin-top: 1rem;">
+              <button type="submit" class="btn btn-primary" id="btnGenerateQuotePdf" style="width: 100%; padding: 0.85rem; font-size: 1rem; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <span>📄</span> Generar Cotización en PDF Oficial
+              </button>
+            </div>
+          </form>
+
+          <!-- RESULTADO GENERADO: TARJETA DE ACCIONES Y DESCARGA -->
+          <div id="quoteResultCard" class="quote-result-box hidden" style="margin-top: 1.25rem;">
+            <div class="quote-result-header">
+              <span style="font-size: 1.2rem;">🎉</span>
+              <div>
+                <strong style="color: #4ade80;" id="quoteResultCorrelativo">COT-2026-XXXX</strong>
+                <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0;">Documento PDF listo para enviar y descargar.</p>
+              </div>
+            </div>
+            <div class="quote-result-actions" style="display: flex; gap: 8px; margin-top: 0.75rem; flex-wrap: wrap;">
+              <a href="#" target="_blank" class="btn btn-success" id="btnDownloadQuotePdf" style="flex: 1; text-align: center; text-decoration: none; padding: 0.65rem;">
+                📥 Ver / Descargar PDF
+              </a>
+              <button type="button" class="btn btn-primary" id="btnShareQuoteWhatsApp" style="flex: 1.2; padding: 0.65rem;">
+                📱 Enviar por WhatsApp
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- COLUMNA 2: DIRECTORIO CRM DE CLIENTES & HISTORIAL -->
+        <div class="card crm-clients-card">
+          <div class="card-header" style="padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); margin-bottom: 1rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <h3 class="card-title" style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 1.15rem;">
+                <span>📇</span> Directorio de Clientes & CRM
+              </h3>
+              <span class="badge-profit" id="crmTotalClientsBadge" style="font-size: 0.75rem;">0 clientes</span>
+            </div>
+            <p class="card-subtitle" style="margin-top: 4px; font-size: 0.85rem; color: var(--text-muted);">
+              Fichas de clientes actualizadas automáticamente con cada venta o pedido web.
+            </p>
+          </div>
+
+          <!-- Buscador de clientes -->
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <input type="text" id="crmSearchInput" class="form-control" placeholder="🔍 Buscar por nombre, teléfono/WhatsApp o distrito...">
+          </div>
+
+          <!-- Tabla de clientes -->
+          <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
+            <table class="inventory-table">
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Ubicación</th>
+                  <th style="text-align: right;">Compras</th>
+                  <th style="text-align: center;">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="crmClientsTableBody">
+                <!-- Se puebla dinámicamente -->
+              </tbody>
+            </table>
+          </div>
+
+          <div id="crmClientsEmptyState" class="empty-state-inventory hidden" style="padding: 1.5rem; text-align: center;">
+            <p style="color: var(--text-muted); margin: 0;">No se encontraron clientes con ese término.</p>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL DE DETALLE DE PEDIDO WEB -->
+  <div id="webOrderDetailModal" class="modal-overlay hidden">
+    <div class="modal-container" style="max-width: 580px;">
+      <div class="modal-header">
+        <div class="store-modal-header-info">
+          <span class="header-icon-pill">📦</span>
+          <div>
+            <h3 class="modal-title" id="webOrderModalTitle">Detalle del Pedido</h3>
+            <p class="modal-subtitle" id="webOrderModalSubtitle">Información completa y comprobante de pago</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="btnCloseWebOrderModal">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.5rem;">
+        <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+            <strong style="color: #ffffff;" id="webModalCustName">Cliente: -</strong>
+            <span id="webModalStatusBadge"></span>
+          </div>
+          <div style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;" id="webModalCustDetails">
+            📱 WhatsApp: -<br>
+            📍 Distrito/Dirección: -<br>
+            💳 Método de Pago: -
+          </div>
+        </div>
+
+        <h4 style="font-size: 0.88rem; font-weight: 700; color: #ffffff; margin-bottom: 0.5rem;">Ítems Solicitados:</h4>
+        <div id="webModalItemsList" style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
+          <!-- Ítems -->
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: baseline; padding-top: 0.75rem; border-top: 1px dashed var(--border-color); margin-bottom: 1rem;">
+          <span style="font-weight: 600; color: var(--text-muted);">Monto Total a Cobrar:</span>
+          <span style="font-size: 1.35rem; font-weight: 800; color: #10b981;" id="webModalTotalAmount">S/ 0.00</span>
+        </div>
+
+        <!-- VISTA DE COMPROBANTE DE PAGO SI EXISTE -->
+        <div id="webModalProofWrap" style="display: none; background: #090d16; border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem; text-align: center; margin-bottom: 1rem;">
+          <span style="font-size: 0.78rem; font-weight: 700; color: var(--accent); display: block; margin-bottom: 0.5rem;">Captura de Constancia de Pago Adjunta:</span>
+          <img id="webModalProofImg" src="" alt="Comprobante" style="max-height: 200px; max-width: 100%; object-fit: contain; border-radius: 6px; margin: 0 auto; display: block;">
+          <a id="webModalProofLink" href="" target="_blank" class="btn btn-secondary btn-xs" style="margin-top: 0.5rem; display: inline-block;">Ver comprobante en tamaño completo ↗</a>
+        </div>
+
+        <!-- ACCIONES DEL PEDIDO Y FLUJO CONTRAENTREGA / BAJO PEDIDO -->
+        <div style="display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1rem; flex-wrap: wrap;" id="webModalActionsWrap">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnWebModalReject">✕ Rechazar</button>
+          <button type="button" class="btn btn-whatsapp btn-sm" id="btnWebModalWa">📲 Chat WhatsApp</button>
+          <button type="button" class="btn btn-warning btn-sm hidden" id="btnWebModalPurchased" title="Confirmar que compraste el producto en el proveedor externo">📦 Marcar Comprado en Proveedor</button>
+          <button type="button" class="btn btn-outline-primary btn-sm hidden" id="btnWebModalInDelivery" title="Confirmar que el paquete ya va en camino con el repartidor">🛵 En Reparto (Contraentrega)</button>
+          <button type="button" class="btn btn-success btn-sm hidden" id="btnWebModalCodComplete" title="Confirmar cobro realizado al cliente (Efectivo/Yape/Plin)">✅ Cobrado Contraentrega</button>
+          <button type="button" class="btn btn-primary btn-sm" id="btnWebModalApprove">✓ Aprobar Pedido</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+      <!-- ============================================================== -->
+    <!-- SECCIÓN F: CAMPAÑAS PUBLICITARIAS Y REDES SOCIALES (COSTO $0) -->
+    <!-- ============================================================== -->
+    
+
+  </main>
+
+  <!-- MODAL PARA CONFIRMAR VENTAS DEL LOTE COMPLETO -->
+  <div id="confirmLotSalesModal" class="modal-overlay hidden">
+    <div class="modal-container">
+      <div class="modal-header">
+        <div class="store-modal-header-info">
+          <span class="header-icon-pill">💰</span>
+          <div>
+            <h3 class="modal-title">Registrar Ventas del Lote</h3>
+            <p class="store-modal-subtitle">Convierte los ítems del lote en ventas concretadas</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="btnCloseConfirmLotSalesModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="lot-sales-summary-box" id="lotSalesModalPreview">
+          <!-- Resumen de ítems y stock a descontar -->
+        </div>
+
+        <form id="formConfirmLotSales" class="custom-form" style="margin-top: 1rem;">
+          <div class="form-group">
+            <label for="lotSaleChannel">Canal de Venta para las operaciones:</label>
+            <select id="lotSaleChannel" class="form-control">
+              <option value="Venta Directa" selected>🤝 Venta Directa / En Persona</option>
+              <option value="WhatsApp">📱 WhatsApp</option>
+              <option value="Marketplace">👥 Facebook Marketplace</option>
+              <option value="Tienda Web">🌐 Tienda Web / E-comm</option>
+              <option value="Mercado Libre">📦 Mercado Libre</option>
+              <option value="Instagram">📸 Instagram / TikTok</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="lotSaleGlobalCommission">Comisión Global o Gasto de Envío Total (<span class="currency-symbol">S/</span>):</label>
+            <input type="number" id="lotSaleGlobalCommission" class="form-control" step="0.01" min="0" value="0.00" placeholder="0.00">
+            <span class="field-hint">Se prorrateará equitativamente entre los ítems del lote</span>
+          </div>
+
+          <div class="form-group">
+            <label class="custom-checkbox-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+              <input type="checkbox" id="lotSaleClearCheck" checked>
+              <span style="font-size: 0.84rem; font-weight: 600; color: #334155;">Vaciar el Lote Activo después de registrar las ventas</span>
+            </label>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="btnCancelConfirmLotSales">
+          Cancelar
+        </button>
+        <button type="button" class="btn btn-primary" id="btnExecuteLotSales">
+          ✓ Confirmar y Registrar Ventas
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL PARA CREAR POST PUBLICITARIO PARA REDES CON IA -->
+  <div id="socialPostModal" class="modal-overlay hidden">
+    <div class="modal-container modal-lg">
+      <div class="modal-header">
+        <div class="modal-header-brand">
+          <span class="sparkle-icon">✨</span>
+          <div>
+            <h3 class="modal-title">Crear Post Publicitario para Redes con IA</h3>
+            <p class="modal-subtitle">Fotografía de impacto y copy persuasivo listo para Instagram, Facebook o WhatsApp</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="btnCloseSocialPostModal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="social-post-layout">
+          <!-- Columna Izquierda: Configuración -->
+          <div class="social-post-form">
+            <div class="form-group">
+              <label for="postProdSelect">Seleccionar Producto del Inventario / Lote</label>
+              <select id="postProdSelect" class="select-clean">
+                <option value="">-- Elige un producto o escribe abajo --</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="postProdName">Nombre Comercial del Producto *</label>
+              <input type="text" id="postProdName" placeholder="Ej. Taladro Percutor Inalámbrico 20V PRO" required>
+            </div>
+
+            <div class="form-group">
+              <label for="postProdDesc">Detalles / Beneficios Destacados (Opcional)</label>
+              <textarea id="postProdDesc" rows="2" placeholder="Ej. Incluye 2 baterías y maletín, garantía 12 meses, despacho inmediato"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label>Estilo Visual de la Imagen</label>
+              <div class="style-cards-grid">
+                <label class="style-option-card active" data-style="marketing">
+                  <input type="radio" name="postStyle" value="marketing" checked class="style-radio-hidden">
+                  <span class="style-badge">Marketing</span>
+                  <strong class="style-title">Publicitario Redes</strong>
+                  <span class="style-desc">Vibrante, contraste dinámico, estética de ventas</span>
+                </label>
+                <label class="style-option-card" data-style="lifestyle">
+                  <input type="radio" name="postStyle" value="lifestyle" class="style-radio-hidden">
+                  <span class="style-badge">Lifestyle</span>
+                  <strong class="style-title">Uso Cotidiano</strong>
+                  <span class="style-desc">Ambiente real contemporáneo y luz natural</span>
+                </label>
+                <label class="style-option-card" data-style="estudio">
+                  <input type="radio" name="postStyle" value="estudio" class="style-radio-hidden">
+                  <span class="style-badge">Estudio</span>
+                  <strong class="style-title">Fondo Blanco</strong>
+                  <span class="style-desc">Catálogo profesional limpio y nítido</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="custom-checkbox-label">
+                <input type="checkbox" id="postGenerateCopy" checked>
+                <span class="custom-chk"></span>
+                <span>Generar copy publicitario persuasivo con Gemini 2.5 Flash</span>
+              </label>
+            </div>
+
+            <button type="button" class="btn btn-primary btn-block btn-lg" id="btnSubmitGeneratePost">
+              ✨ Generar Imagen y Copy con IA
+            </button>
+          </div>
+
+          <!-- Columna Derecha: Vista Previa y Exportación -->
+          <div class="social-post-preview-panel">
+            <h4 class="preview-panel-title">Vista Previa del Contenido</h4>
+
+            <!-- Indicador de carga -->
+            <div id="postLoadingIndicator" class="post-loading-wrap hidden">
+              <div class="spinner-ring"></div>
+              <p>Generando imagen con IA y redactando copy persuasivo...</p>
+            </div>
+
+            <!-- Contenedor de Resultado -->
+            <div id="postResultContainer" class="post-result-wrap hidden">
+              <!-- Imagen Generada -->
+              <div class="post-image-preview-card">
+                <img id="postResultImage" src="" alt="Imagen publicitaria generada por IA">
+                <div class="post-image-overlay-actions">
+                  <a id="btnDownloadPostImage" href="#" download="producto_kipustock.png" class="btn btn-primary btn-sm">
+                    ⬇ Descargar Imagen (.png)
+                  </a>
+                </div>
+              </div>
+
+              <!-- Copy Textarea -->
+              <div class="post-copy-card">
+                <div class="post-copy-header">
+                  <span class="copy-label">Texto para Redes Sociales (Copy):</span>
+                  <button type="button" class="btn btn-xs btn-outline-primary" id="btnCopyPostText">
+                    📋 Copiar Texto
+                  </button>
+                </div>
+                <textarea id="postResultCopy" class="post-copy-textarea" rows="6" placeholder="El copy publicitario aparecerá aquí..."></textarea>
+              </div>
+            </div>
+
+            <div id="postEmptyState" class="post-empty-hint">
+              <div class="empty-icon-mini">📢</div>
+              <p>Elige un producto y haz clic en "Generar Imagen y Copy con IA" para ver el resultado listo para publicar.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer con botón claro para salir / volver -->
+      <div class="modal-footer">
+        <span class="modal-keyboard-hint">💡 Tip: También puedes presionar la tecla <strong>ESC</strong> o hacer clic afuera para salir</span>
+        <button type="button" class="btn btn-secondary" id="btnCancelSocialPostModal">
+          ← Volver / Cerrar Ventana
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL PARA EXPORTAR RESUMEN DEL LOTE -->
+  <div id="exportModal" class="modal-overlay hidden">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">Resumen Ejecutivo del Lote de Operación</h3>
+        <button class="modal-close-btn" id="btnCloseExportModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="export-preview-box" id="exportSummaryContent">
+          <!-- Texto preformateado listo para copiar o descargar -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btnCopyExportText">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
+            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
+          </svg>
+          Copiar al Portapapeles
+        </button>
+        <button class="btn btn-primary" id="btnDownloadExportFile">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Descargar Informe (.TXT)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE APERTURA SEGURA DE TIENDA EXTERNA -->
+  <div id="storeLinkModal" class="modal-overlay hidden">
+    <div class="modal-container store-link-modal-card">
+      <div class="modal-header">
+        <div class="store-modal-header-info">
+          <span class="store-badge-icon">🏪</span>
+          <div>
+            <h3 class="modal-title" id="storeModalTitle">Visitar Tienda</h3>
+            <p class="store-modal-subtitle" id="storeModalSubtitle">Enlace a la publicación oficial</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="btnCloseStoreModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="store-link-notice">
+          <p>Para no perder tu búsqueda ni tu sesión de trabajo en <strong>KipuStock</strong>, abre la tienda en una <strong>nueva pestaña</strong> de tu navegador o copia el enlace directo:</p>
+        </div>
+        <div class="store-url-box">
+          <input type="text" id="storeModalUrlInput" readonly class="store-url-input">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnCopyStoreModalUrl">
+            📋 Copiar Enlace
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer store-modal-footer">
+        <button type="button" class="btn btn-secondary" id="btnStayInKipu">
+          ← Volver a KipuStock
+        </button>
+        <button type="button" class="btn btn-primary" id="btnOpenStoreExternal">
+          Abrir en pestaña nueva ↗
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: PUBLICACIÓN DE TIENDA ONLINE ($0) CON CLOUDFLARE TUNNEL -->
+  <div id="tunnelModal" class="modal-overlay hidden">
+    <div class="modal-container" style="max-width: 580px;">
+      <div class="modal-header">
+        <div class="store-modal-header-info">
+          <span class="header-icon-pill" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa;">🌐</span>
+          <div>
+            <h3 class="modal-title">Publicar Tienda Online en Internet</h3>
+            <p class="store-modal-subtitle">Túnel seguro y gratuito ($0) con Cloudflare Tunnel</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="btnCloseTunnelModal">&times;</button>
+      </div>
+
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 16px;">
+        <!-- Estado del Túnel -->
+        <div class="tunnel-status-card" id="tunnelStatusCard" style="display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-radius: 8px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1);">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="tunnel-status-dot" id="tunnelStatusDot" style="width: 12px; height: 12px; border-radius: 50%; background: #94a3b8; display: inline-block;"></span>
+            <div>
+              <strong id="tunnelStatusText" style="display: block; font-size: 0.95rem;">Tienda Sin Publicar</strong>
+              <small id="tunnelStatusSub" style="color: var(--text-muted); font-size: 0.8rem;">Solo visible en tu computadora (localhost:8000)</small>
+            </div>
+          </div>
+          <div id="tunnelActionBtnWrap">
+            <button type="button" class="btn btn-primary" id="btnStartTunnel">
+              <span>🚀</span> Publicar Ahora ($0)
+            </button>
+            <button type="button" class="btn btn-danger hidden" id="btnStopTunnel">
+              <span>⏹️</span> Detener Publicación
+            </button>
+          </div>
+        </div>
+
+        <!-- Alerta / Spinner mientras se activa -->
+        <div id="tunnelLoadingBox" class="hidden" style="text-align: center; padding: 16px; background: rgba(59, 130, 246, 0.08); border-radius: 8px; border: 1px dashed rgba(59, 130, 246, 0.3);">
+          <div style="font-size: 1.5rem; display: inline-block;">⏳</div>
+          <p style="margin-top: 8px; font-size: 0.9rem; color: #93c5fd;" id="tunnelLoadingMsg">
+            Configurando Cloudflare Tunnel... Si es la primera vez, descargará el binario oficial (~50MB).
+          </p>
+        </div>
+
+        <!-- Área de URL Pública Activa -->
+        <div id="tunnelActiveInfoBox" class="hidden" style="display: flex; flex-direction: column; gap: 12px; background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 16px;">
+          <div>
+            <label style="font-size: 0.85rem; font-weight: 600; color: #10b981; display: block; margin-bottom: 6px;">
+              🔗 Enlace Público de tu Catálogo para Clientes:
+            </label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="tunnelPublicUrlInput" readonly class="form-control" style="font-family: monospace; font-size: 0.85rem; background: rgba(0,0,0,0.3); color: #34d399; font-weight: 600;" value="">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnCopyTunnelUrl" style="white-space: nowrap;">
+                📋 Copiar Enlace
+              </button>
+              <a href="/tienda" id="btnOpenTunnelExternal" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm" style="white-space: nowrap;">
+                Abrir ↗
+              </a>
+            </div>
+            <p style="font-size: 0.76rem; color: #94a3b8; margin: 6px 0 0 0; line-height: 1.35;">
+              ⏱️ <em>Nota:</em> Cloudflare toma 3 a 8 segundos en propagar el nuevo subdominio en los DNS de internet. Si tu navegador muestra <code>NXDOMAIN</code> al abrir de inmediato, solo espera 5 segundos y recarga la página (F5).
+            </p>
+          </div>
+
+          <!-- Vista Previa QR Code -->
+          <div style="display: flex; gap: 16px; align-items: center; margin-top: 8px; background: rgba(0,0,0,0.25); border-radius: 8px; padding: 12px;">
+            <div style="background: #ffffff; padding: 8px; border-radius: 6px; display: flex; align-items: center; justify-content: center; min-width: 110px; min-height: 110px;">
+              <img id="tunnelQrCodeImg" src="" alt="Código QR Tienda" style="width: 100px; height: 100px; display: block;" />
+            </div>
+            <div style="flex: 1;">
+              <strong style="color: #ffffff; font-size: 0.9rem;">📱 Código QR de tu Tienda</strong>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+                Tus clientes pueden escanearlo con la cámara del celular para comprar y ver tus productos en vivo.
+              </p>
+              <a href="#" id="btnDownloadTunnelQr" target="_blank" class="btn btn-outline btn-xs" style="margin-top: 6px;">
+                ⬇️ Ver / Descargar Código QR
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bloque Colapsable: Configuración de Subdominio Fijo (Named Tunnel) -->
+        <div class="tunnel-fixed-config-card" style="border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; background: rgba(255, 255, 255, 0.03); overflow: hidden;">
+          <button type="button" id="btnToggleFixedDomainConfig" style="width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: none; border: none; color: var(--text-main, #f1f5f9); cursor: pointer; text-align: left; font-size: 0.88rem; font-weight: 600;">
+            <span style="display: flex; align-items: center; gap: 8px;">
+              <span>⚙️ Configurar Subdominio Fijo (Opcional)</span>
+              <span id="badgeFixedConfigActive" class="badge hidden" style="font-size: 0.7rem; background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 2px 6px; border-radius: 4px;">Configurado</span>
+            </span>
+            <span id="fixedConfigChevron" style="font-size: 0.75rem; transition: transform 0.2s;">▼</span>
+          </button>
+          
+          <div id="fixedDomainConfigBody" class="hidden" style="padding: 0 14px 14px 14px; display: flex; flex-direction: column; gap: 12px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+            <p style="font-size: 0.78rem; color: var(--text-muted, #94a3b8); margin: 8px 0 0 0; line-height: 1.4;">
+              Si tienes tu propio dominio administrado en Cloudflare, puedes configurar un <strong>Named Tunnel</strong> gratuito ($0) para tener siempre una dirección fija permanente (ej. <code>https://tienda.midominio.com</code>) en lugar de una URL temporal.
+            </p>
+
+            <div>
+              <label for="tunnelFixedDomainInput" style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px; color: #cbd5e1;">
+                🌐 Dominio o Subdominio Fijo:
+              </label>
+              <input type="text" id="tunnelFixedDomainInput" class="form-control" placeholder="https://tienda.midominio.com" style="font-size: 0.85rem; width: 100%;">
+              <small style="font-size: 0.72rem; color: #94a3b8;">Ejemplo: <code>https://tienda.tumarca.pe</code> o <code>tienda.midominio.com</code></small>
+            </div>
+
+            <div>
+              <label for="tunnelTokenInput" style="font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px; color: #cbd5e1;">
+                🔑 Token del Túnel (CLOUDFLARE_TUNNEL_TOKEN):
+              </label>
+              <textarea id="tunnelTokenInput" class="form-control" rows="2" placeholder="Pega el token del túnel de Cloudflare Zero Trust (ej. eyJhIjoi...)" style="font-family: monospace; font-size: 0.78rem; width: 100%; resize: vertical;"></textarea>
+              <small style="font-size: 0.72rem; color: #94a3b8;">
+                Obtenido en <em>Cloudflare Zero Trust &gt; Networks &gt; Tunnels</em> (apuntando a <code>HTTP://localhost:8000</code>).
+              </small>
+            </div>
+
+            <div style="display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 4px;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnResetTunnelConfig" style="font-size: 0.78rem;">
+                Restablecer a Modo Rápido
+              </button>
+              <button type="button" class="btn btn-primary btn-sm" id="btnSaveTunnelConfig" style="font-size: 0.78rem;">
+                💾 Guardar Subdominio Fijo
+              </button>
+            </div>
+            
+            <div id="tunnelConfigFeedback" class="hidden" style="font-size: 0.78rem; padding: 8px 10px; border-radius: 4px;"></div>
+          </div>
+        </div>
+
+        <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+          💡 <strong>Beneficio KipuStock:</strong> El túnel crea una conexión SSL encriptada directa entre tu PC y la red mundial de Cloudflare. Tus clientes ven tus productos actualizados en tiempo real y realizan pedidos contraentrega sin costo de hosting ni configuración de dominio.
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display: flex; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" id="btnCloseTunnelModalFooter">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: GESTOR DE TIENDAS Y PROVEEDORES WEB PERSONALIZADOS -->
+  <div id="customStoresModal" class="modal-overlay hidden">
+    <div class="modal-container modal-lg" style="max-width: 820px;">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-icon-badge" style="background: rgba(14, 165, 233, 0.15); color: #0284c7;">🌐</div>
+          <div>
+            <h3>Gestor de Tiendas y Proveedores Web</h3>
+            <p class="modal-subtitle">Registra páginas web de mayoristas, tiendas retail o distribuidores para incluirlos en tus búsquedas de arbitraje.</p>
+          </div>
+        </div>
+        <button type="button" class="modal-close" id="btnCloseCustomStoresModal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Formulario para agregar / editar tienda -->
+        <form id="customStoreForm" class="custom-store-form-box">
+          <input type="hidden" id="csStoreId" value="">
+          <div class="cs-form-grid">
+            <div class="form-group">
+              <label for="csNombre">Nombre de la Tienda / Proveedor <span class="required">*</span></label>
+              <input type="text" id="csNombre" class="form-control" placeholder="Ej. Coolbox Perú, Hiraoka, Tailoy..." required>
+            </div>
+            <div class="form-group">
+              <label for="csUrlWeb">Dirección Electrónica (Página Web) <span class="required">*</span></label>
+              <input type="url" id="csUrlWeb" class="form-control" placeholder="https://www.coolbox.pe" required>
+            </div>
+            <div class="form-group">
+              <label for="csUrlBusqueda">Plantilla de Búsqueda (Opcional)</label>
+              <input type="text" id="csUrlBusqueda" class="form-control" placeholder="Ej. https://www.coolbox.pe/search?q={query}">
+              <span class="field-hint">Usa <code>{query}</code> donde va la palabra clave. Si lo dejas vacío, usará la página web.</span>
+            </div>
+            <div class="form-group">
+              <label for="csCategoria">Categoría / Rubro</label>
+              <select id="csCategoria" class="form-control">
+                <option value="Tecnología">📱 Tecnología / Electrónica</option>
+                <option value="Moda y Calzado">👟 Moda, Ropa y Calzado</option>
+                <option value="Ferretería">🔨 Ferretería y Herramientas</option>
+                <option value="Hogar y Muebles">🏠 Hogar, Cocina y Muebles</option>
+                <option value="Juguetería">🧸 Juguetería y Niños</option>
+                <option value="Mayorista / Distribuidor">📦 Proveedor Mayorista / B2B</option>
+                <option value="General" selected>🏪 Comercio General</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="csWhatsapp">WhatsApp / Teléfono de Contacto (Opcional)</label>
+              <input type="text" id="csWhatsapp" class="form-control" placeholder="Ej. 51987654321">
+            </div>
+            <div class="form-group">
+              <label for="csComision">Comisión o Flete Estimado (%)</label>
+              <input type="number" id="csComision" class="form-control" value="10.0" step="0.5" min="0" max="100">
+            </div>
+            <div class="form-group cs-full-width">
+              <label for="csNotas">Notas / Condiciones Comerciales (Opcional)</label>
+              <input type="text" id="csNotas" class="form-control" placeholder="Ej. Precios incluyen IGV. 5% de descuento adicional al por mayor.">
+            </div>
+          </div>
+          <div class="cs-form-actions">
+            <button type="button" class="btn btn-secondary btn-sm hidden" id="btnCancelEditCustomStore">Cancelar Edición</button>
+            <button type="submit" class="btn btn-primary" id="btnSaveCustomStore">
+              💾 Guardar Tienda Web
+            </button>
+          </div>
+        </form>
+
+        <div class="cs-divider"></div>
+
+        <!-- Tabla / Lista de Tiendas Registradas -->
+        <div class="cs-list-section">
+          <div class="cs-list-header">
+            <h4>Tiendas y Proveedores Registrados (<span id="csCount">0</span>)</h4>
+            <span class="cs-list-subtitle">Las tiendas activas aparecen en tu selector de portales del buscador.</span>
+          </div>
+
+          <div class="table-responsive cs-table-wrap">
+            <table class="inventory-table">
+              <thead>
+                <tr>
+                  <th>Tienda</th>
+                  <th>Categoría</th>
+                  <th>Enlace Web</th>
+                  <th>Contacto</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="customStoresTableBody">
+                <!-- Se pueblan dinámicamente -->
+              </tbody>
+            </table>
+          </div>
+          <div id="csEmptyState" class="empty-state-inventory hidden" style="padding: 1.5rem; text-align: center;">
+            <p style="color: var(--text-light); margin: 0;">Aún no has registrado tiendas o proveedores web personalizados. ¡Ingresa el primero arriba!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: REGISTRAR / EDITAR CLIENTE EN EL CRM -->
+  <div id="newClientModal" class="modal-overlay hidden">
+    <div class="modal-container" style="max-width: 520px;">
+      <div class="modal-header">
+        <div class="store-modal-header-info">
+          <span class="header-icon-pill">👤</span>
+          <div>
+            <h3 class="modal-title" id="clientModalTitle">Registrar Nuevo Cliente</h3>
+            <p class="modal-subtitle">Guarda datos de contacto y dirección para cotizaciones rápidas</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="btnCloseNewClientModal">&times;</button>
+      </div>
+
+      <form id="formNewClient" class="modal-body" style="padding: 1.5rem;">
+        <input type="hidden" id="editClientId" value="">
+
+        <div class="form-group">
+          <label for="clientModalName">Nombre Completo: <span class="required">*</span></label>
+          <input type="text" id="clientModalName" class="form-control" placeholder="Ej. Carlos Mendoza" required>
+        </div>
+
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label for="clientModalPhone">Teléfono / WhatsApp:</label>
+            <input type="tel" id="clientModalPhone" class="form-control" placeholder="Ej. 987654321 o 51987654321">
+          </div>
+          <div class="form-group">
+            <label for="clientModalDistrict">Distrito / Ciudad:</label>
+            <input type="text" id="clientModalDistrict" class="form-control" placeholder="Ej. Surco, Lima">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="clientModalAddress">Dirección Completa / Referencia:</label>
+          <input type="text" id="clientModalAddress" class="form-control" placeholder="Ej. Av. Benavides 1230, Dpto 401">
+        </div>
+
+        <div class="form-group">
+          <label for="clientModalNotes">Notas de Preferencias o Compras:</label>
+          <textarea id="clientModalNotes" class="form-control" rows="2" placeholder="Ej. Prefiere envíos por Olva los sábados"></textarea>
+        </div>
+
+        <div class="modal-footer" style="padding: 1rem 0 0 0; display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn btn-secondary" id="btnCancelNewClient">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btnSaveClient">Guardar Cliente</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: GESTIÓN DE TARIFAS DE ENVÍO -->
+  <div id="shippingRatesModal" class="modal-overlay hidden">
+    <div class="modal-container" style="max-width: 680px;">
+      <div class="modal-header">
+        <div class="store-modal-header-info">
+          <span class="header-icon-pill">🚚</span>
+          <div>
+            <h3 class="modal-title">Tarifas de Envío & Despacho</h3>
+            <p class="modal-subtitle">Configura los costos de courier y agencias para cotizaciones y ventas</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="btnCloseShippingRatesModal">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.5rem;">
+        <!-- Formulario para agregar/editar tarifa -->
+        <form id="formShippingRate" style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem;">
+          <h4 style="margin: 0 0 0.75rem 0; font-size: 0.95rem; color: #93c5fd;" id="shippingRateFormTitle">+ Agregar Nueva Tarifa</h4>
+          <input type="hidden" id="editShippingRateId" value="">
+
+          <div class="form-row form-row-2">
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label for="shippingRateName">Nombre de la Tarifa / Destino: <span class="required">*</span></label>
+              <input type="text" id="shippingRateName" class="form-control" placeholder="Ej. Lima Express Motorizado" required>
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label for="shippingRateCost">Costo de Envío (S/): <span class="required">*</span></label>
+              <input type="number" id="shippingRateCost" class="form-control" step="0.50" min="0" placeholder="0.00" required>
+            </div>
+          </div>
+
+          <div class="form-row form-row-2">
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label for="shippingRateDeliveryTime">Tiempo Estimado:</label>
+              <input type="text" id="shippingRateDeliveryTime" class="form-control" placeholder="Ej. 24 hrs o 48 a 72 hrs">
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label for="shippingRateType">Zona / Tipo:</label>
+              <select id="shippingRateType" class="form-control">
+                <option value="Local">Lima Metropolitana / Local</option>
+                <option value="Periferia">Lima Periferia / Conos</option>
+                <option value="Provincia Shalom">Provincia Shalom (Agencia)</option>
+                <option value="Provincia Olva">Provincia Olva (Domicilio)</option>
+                <option value="Punto de entrega">Punto de Entrega / Tienda</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
+            <button type="button" class="btn btn-secondary" id="btnCancelEditShippingRate" style="display: none;">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="btnSaveShippingRate">Guardar Tarifa</button>
+          </div>
+        </form>
+
+        <!-- Tabla de tarifas existentes -->
+        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: var(--text-light);">Tarifas Activas en el Sistema:</h4>
+        <div class="table-responsive" style="max-height: 240px; overflow-y: auto;">
+          <table class="inventory-table" style="font-size: 0.85rem;">
+            <thead>
+              <tr>
+                <th>Destino / Modalidad</th>
+                <th>Tiempo</th>
+                <th style="text-align: right;">Costo (S/)</th>
+                <th style="text-align: center;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="shippingRatesTableBody">
+              <!-- Se puebla dinámicamente -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICACIONES -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="/static/app.js?v=2.5"></script>
+</body>
+</html>

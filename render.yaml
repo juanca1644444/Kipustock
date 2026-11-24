@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: kipustock-cloud
+    env: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/system/db-status
+    envVars:
+      - key: IS_CLOUD
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DEFAULT_COMMISSION_PERCENT
+        value: "12.0"
