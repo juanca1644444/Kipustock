@@ -644,10 +644,10 @@ class SearchEngine:
             logger.debug(f"Error parseando VTEX para {site_name}: {e}")
         return items
 
-    async def _find_real_product_image(self, title: str) -> str:
+    async def _find_real_product_image(self, title: str, client: Optional[httpx.AsyncClient] = None) -> str:
         """
         Localiza una fotografía real de alta resolución para el producto en catálogos abiertos de comercio peruano.
-        Ultraligero (HTTP < 3s), no consume RAM de navegador ni falla si no encuentra imagen.
+        Ultraligero (HTTP < 2s con pool de conexiones), no consume RAM ni falla si no encuentra imagen.
         """
         if not title:
             return ""
@@ -657,22 +657,34 @@ class SearchEngine:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         }
-        for base_url in ["https://www.oechsle.pe", "https://www.plazavea.com.pe"]:
+        
+        async def _query_url(c: httpx.AsyncClient, u: str) -> str:
             try:
-                url = f"{base_url}/api/catalog_system/pub/products/search?ft={encoded}"
-                async with httpx.AsyncClient(headers=headers, timeout=3.0, follow_redirects=True) as client:
-                    resp = await client.get(url)
-                    if resp.status_code in [200, 206]:
-                        data = resp.json()
-                        if isinstance(data, list) and len(data) > 0:
-                            first_item = data[0]
-                            items_list = first_item.get("items", [])
-                            if items_list and items_list[0].get("images"):
-                                img_url = items_list[0]["images"][0].get("imageUrl", "")
-                                if img_url:
-                                    return img_url
+                resp = await c.get(u, timeout=2.2)
+                if resp.status_code in [200, 206]:
+                    data = resp.json()
+                    if isinstance(data, list) and len(data) > 0:
+                        first_item = data[0]
+                        items_list = first_item.get("items", [])
+                        if items_list and items_list[0].get("images"):
+                            return items_list[0]["images"][0].get("imageUrl", "")
             except Exception:
-                continue
+                pass
+            return ""
+
+        url = f"https://www.oechsle.pe/api/catalog_system/pub/products/search?ft={encoded}"
+        if client:
+            res = await _query_url(client, url)
+            if res:
+                return res
+        else:
+            try:
+                async with httpx.AsyncClient(headers=headers, timeout=2.2, follow_redirects=True) as local_c:
+                    res = await _query_url(local_c, url)
+                    if res:
+                        return res
+            except Exception:
+                pass
         return ""
 
     async def _get_gemini_store_reference(
@@ -700,11 +712,20 @@ class SearchEngine:
                 "Responde unicamente en formato JSON sin explicaciones ni markdown: "
                 '[{"nombre": "Nombre exacto del producto", "precio_compra": 189.90}]'
             )
-            response = await asyncio.to_thread(
-                client.models.generate_content,
-                model="gemini-3.5-flash-lite",
-                contents=prompt
-            )
+            def _call_gemini_models():
+                for m_name in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"]:
+                    try:
+                        return client.models.generate_content(
+                            model=m_name,
+                            contents=prompt
+                        )
+                    except Exception as ex_m:
+                        logger.debug(f"Modelo {m_name} fallo en referencia {store_name}: {ex_m}")
+                return None
+
+            response = await asyncio.to_thread(_call_gemini_models)
+            if not response or not hasattr(response, "text") or not response.text:
+                return []
             raw_text = response.text.strip().replace("```json", "").replace("```", "").strip()
             data = json.loads(raw_text)
             results = []
@@ -719,9 +740,13 @@ class SearchEngine:
                     except (ValueError, TypeError):
                         continue
 
-                # Búsqueda concurrente de fotos reales de alta resolución para evitar placeholders vacíos
-                image_tasks = [self._find_real_product_image(t[0]) for t in titles_and_prices]
-                images = await asyncio.gather(*image_tasks, return_exceptions=True)
+                # Búsqueda concurrente de fotos reales de alta resolución con pool HTTP compartido
+                img_headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                }
+                async with httpx.AsyncClient(headers=img_headers, timeout=2.5, follow_redirects=True) as shared_img_client:
+                    image_tasks = [self._find_real_product_image(t[0], client=shared_img_client) for t in titles_and_prices]
+                    images = await asyncio.gather(*image_tasks, return_exceptions=True)
 
                 for (title, p_val), img in zip(titles_and_prices, images):
                     img_src = img if (isinstance(img, str) and img.startswith("http")) else ""
@@ -1329,6 +1354,15 @@ class SearchEngine:
 
         # En modo Cloud $0 o si Chromium no está disponible
         if IS_CLOUD_ENV or not is_playwright_available():
+            gemini_results = await self._get_gemini_store_reference("AliExpress", query, search_url, max_items)
+            if gemini_results:
+                return {
+                    "tienda": "AliExpress",
+                    "items": gemini_results,
+                    "status": "ok",
+                    "mensaje": f"{len(gemini_results)} ofertas encontradas en AliExpress.",
+                    "search_url": search_url
+                }
             return {
                 "tienda": "AliExpress",
                 "items": [],
@@ -1416,6 +1450,15 @@ class SearchEngine:
 
         # En modo Cloud $0 o si Chromium no está disponible
         if IS_CLOUD_ENV or not is_playwright_available():
+            gemini_results = await self._get_gemini_store_reference("Facebook Marketplace", query, search_url, max_items)
+            if gemini_results:
+                return {
+                    "tienda": "Facebook Marketplace",
+                    "items": gemini_results,
+                    "status": "ok",
+                    "mensaje": f"{len(gemini_results)} publicaciones encontradas en Facebook Marketplace Lima.",
+                    "search_url": search_url
+                }
             return {
                 "tienda": "Facebook Marketplace",
                 "items": [],
@@ -1530,6 +1573,16 @@ class SearchEngine:
 
         # En modo Cloud $0 o si Chromium no está disponible
         if IS_CLOUD_ENV or not is_playwright_available():
+            gemini_results = await self._get_gemini_store_reference("Temu", query, search_url, max_items)
+            if gemini_results:
+                return {
+                    "tienda": "Temu",
+                    "items": gemini_results,
+                    "status": "ok",
+                    "mensaje": f"{len(gemini_results)} ofertas de importación encontradas en Temu.",
+                    "search_url": search_url,
+                    "requires_unlock": False
+                }
             return {
                 "tienda": "Temu",
                 "items": [],
@@ -1841,8 +1894,9 @@ class SearchEngine:
             async with httpx.AsyncClient(headers=headers, timeout=8.0, follow_redirects=True) as client:
                 resp = await client.get(oechsle_url)
                 if resp.status_code in [200, 206]:
-                    raw_items = self._extract_vtex_products(resp.json(), "Web / Tiendas Perú", search_url, max_items)
+                    raw_items = self._extract_vtex_products(resp.json(), "Web / Google Shopping", search_url, max_items)
                     for it in raw_items:
+                        it["sitio"] = "Web / Google Shopping"
                         val = self._validate_and_sanitize_item(it, "Web / Google Shopping", search_url)
                         if val:
                             results.append(val)
@@ -2593,8 +2647,8 @@ class SearchEngine:
                 logger.debug(f"Error consultando caché de {site_name}: {e_c}")
 
             try:
-                # Timeout individual controlado (26s) para que un portal lento nunca frene a los demás
-                res = await asyncio.wait_for(fn(q), timeout=26.0)
+                # Timeout individual controlado (35s) para que un portal lento nunca frene a los demás
+                res = await asyncio.wait_for(fn(q), timeout=35.0)
                 if isinstance(res, dict):
                     try:
                         search_cache.set(site_name, q, res)
