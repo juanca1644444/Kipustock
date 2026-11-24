@@ -646,70 +646,85 @@ class SearchEngine:
 
     async def _find_real_product_image(self, title: str, root_query: str = "", client: Optional[httpx.AsyncClient] = None) -> str:
         """
-        Localiza una fotografía real verificada para el producto en catálogos abiertos peruanos (VTEX/Oechsle).
-        Valida que el producto devuelto coincida semánticamente con el artículo buscado,
-        evitando categóricamente asociar imágenes erróneas (ej. perfumes o coches de bebé a aspiradoras).
+        Localiza una fotografía real verificada para el producto en catálogos abiertos peruanos (Oechsle y PlazaVea).
+        Aplica limpieza de modificadores ruidosos (mini, nuevo, usb, portátil) y validación semántica estricta.
+        Si la frase compuesta no produce coincidencia exacta, recurre al sustantivo raíz para garantizar que NINGÚN
+        producto quede con marco vacío o sin imagen.
         """
         if not title:
             return ""
-        
-        stop_words = {
+
+        # Modificadores genéricos o ruidosos que desvían búsquedas en catálogos VTEX
+        noise_modifiers = {
             "de", "para", "con", "sin", "en", "y", "el", "la", "un", "una", "del", "al", "los", "las",
-            "su", "sus", "por", "sobre", "mas", "alta", "doble", "uso", "accesorios", "coche", "set", "pack"
+            "su", "sus", "por", "sobre", "mas", "alta", "doble", "uso", "accesorios", "coche", "set", "pack",
+            "mini", "super", "nuevo", "nueva", "combo", "kit", "calidad", "tipo", "portatil", "portátil",
+            "inalambrico", "inalámbrico", "recargable", "usb", "electrico", "eléctrico", "potente", "profesional",
+            "teclado", "limpieza"
         }
-        words = [w.lower() for w in re.findall(r'\b[a-zA-ZáéíóúñÁÉÍÓÚÑ0-9]{3,}\b', title) if w.lower() not in stop_words]
-        if not words:
+
+        # Extraer sustantivo principal (priorizando el término de búsqueda original del usuario si existe)
+        clean_root = normalize_search_query(root_query).lower() if root_query else ""
+        root_tokens = [w for w in re.findall(r'\b[a-zA-ZáéíóúñÁÉÍÓÚÑ0-9]{3,}\b', clean_root) if w not in noise_modifiers]
+        
+        all_title_words = [w.lower() for w in re.findall(r'\b[a-zA-ZáéíóúñÁÉÍÓÚÑ0-9]{3,}\b', title)]
+        substantive_words = [w for w in all_title_words if w not in noise_modifiers]
+
+        primary_noun = root_tokens[0] if root_tokens else (substantive_words[0] if substantive_words else (all_title_words[0] if all_title_words else ""))
+        if not primary_noun or len(primary_noun) < 3:
             return ""
 
-        # Identificar sustantivo principal (priorizando el término de búsqueda original del usuario si existe)
-        clean_root = normalize_search_query(root_query).lower() if root_query else ""
-        root_words = [w for w in clean_root.split() if w not in stop_words and len(w) >= 3]
-        primary_noun = root_words[0] if root_words else words[0]
+        noun_stem = primary_noun.rstrip("s")
 
-        # Tomar hasta 3 palabras clave sustantivas
-        search_keywords = words[:3]
-        search_phrase = " ".join(search_keywords)
-        encoded = quote(search_phrase)
+        # Generar lista ordenada de frases de búsqueda desde lo más específico a lo más general
+        search_candidates = []
+        other_words = [w for w in substantive_words if w != primary_noun]
+        if other_words:
+            search_candidates.append(f"{primary_noun} {other_words[0]}")
+        search_candidates.append(primary_noun)
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         }
 
-        async def _query_and_validate(c: httpx.AsyncClient, u: str) -> str:
+        async def _query_catalog(c: httpx.AsyncClient, base_domain: str, phrase: str) -> str:
             try:
+                u = f"{base_domain}/api/catalog_system/pub/products/search?ft={quote(phrase)}"
                 resp = await c.get(u, timeout=2.5)
                 if resp.status_code in [200, 206]:
                     data = resp.json()
                     if isinstance(data, list):
-                        for p in data[:6]:
+                        for p in data[:8]:
                             p_name = (p.get("productName") or "").lower()
-                            # Validación estricta: el nombre del producto debe contener el sustantivo principal
-                            # Si buscamos 'aspiradora', el resultado DEBE tener 'aspiradora' o 'vacuum'
-                            noun_stem = primary_noun.rstrip("s")
+                            # Validación estricta: el producto debe contener la raíz del sustantivo
                             if primary_noun in p_name or noun_stem in p_name:
                                 items_list = p.get("items", [])
                                 if items_list and items_list[0].get("images"):
                                     img_url = items_list[0]["images"][0].get("imageUrl", "")
-                                    if img_url:
+                                    if img_url and img_url.startswith("http"):
                                         return img_url
             except Exception:
                 pass
             return ""
 
-        url = f"https://www.oechsle.pe/api/catalog_system/pub/products/search?ft={encoded}"
+        domains = ["https://www.oechsle.pe", "https://www.plazavea.com.pe"]
+
+        async def _execute_search(c: httpx.AsyncClient) -> str:
+            for phrase in search_candidates:
+                for dom in domains:
+                    found_img = await _query_catalog(c, dom, phrase)
+                    if found_img:
+                        return found_img
+            return ""
+
         if client:
-            res = await _query_and_validate(client, url)
-            if res:
-                return res
+            return await _execute_search(client)
         else:
             try:
-                async with httpx.AsyncClient(headers=headers, timeout=2.5, follow_redirects=True) as local_c:
-                    res = await _query_and_validate(local_c, url)
-                    if res:
-                        return res
+                async with httpx.AsyncClient(headers=headers, timeout=3.0, follow_redirects=True) as local_c:
+                    return await _execute_search(local_c)
             except Exception:
-                pass
-        return ""
+                return ""
 
     async def _get_gemini_store_reference(
         self,
