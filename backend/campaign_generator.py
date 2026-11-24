@@ -498,7 +498,7 @@ Devuelve ÚNICAMENTE un objeto JSON estrictamente válido (sin markdown ```json 
   "email_promo": "Para Correo Promocional: Asunto directo y llamativo ('Asunto: ...') + Cuerpo breve con gancho de bienvenida, beneficios clave, precio de ocasión y botón/link de compra."
 }}
 """
-            for model_name in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+            for model_name in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.7-flash"]:
                 try:
                     resp = client.models.generate_content(
                         model=model_name,
