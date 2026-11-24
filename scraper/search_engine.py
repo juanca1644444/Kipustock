@@ -644,6 +644,37 @@ class SearchEngine:
             logger.debug(f"Error parseando VTEX para {site_name}: {e}")
         return items
 
+    async def _find_real_product_image(self, title: str) -> str:
+        """
+        Localiza una fotografía real de alta resolución para el producto en catálogos abiertos de comercio peruano.
+        Ultraligero (HTTP < 3s), no consume RAM de navegador ni falla si no encuentra imagen.
+        """
+        if not title:
+            return ""
+        clean_title = normalize_search_query(title)
+        query_words = " ".join(clean_title.split()[:4])
+        encoded = quote(query_words)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        }
+        for base_url in ["https://www.oechsle.pe", "https://www.plazavea.com.pe"]:
+            try:
+                url = f"{base_url}/api/catalog_system/pub/products/search?ft={encoded}"
+                async with httpx.AsyncClient(headers=headers, timeout=3.0, follow_redirects=True) as client:
+                    resp = await client.get(url)
+                    if resp.status_code in [200, 206]:
+                        data = resp.json()
+                        if isinstance(data, list) and len(data) > 0:
+                            first_item = data[0]
+                            items_list = first_item.get("items", [])
+                            if items_list and items_list[0].get("images"):
+                                img_url = items_list[0]["images"][0].get("imageUrl", "")
+                                if img_url:
+                                    return img_url
+            except Exception:
+                continue
+        return ""
+
     async def _get_gemini_store_reference(
         self,
         store_name: str,
@@ -653,7 +684,7 @@ class SearchEngine:
     ) -> List[Dict[str, Any]]:
         """
         Respaldo ultraligero con Gemini AI cuando un portal en la nube bloquea la IP de Render ($0).
-        Devuelve modelos reales y precios de referencia del mercado peruano en Soles.
+        Devuelve modelos reales, precios de mercado en Soles y fotografías reales obtenidas de catálogos peruanos.
         """
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
         if not api_key or api_key == "tu_api_key_gratuita_de_google_ai_studio":
@@ -678,25 +709,34 @@ class SearchEngine:
             data = json.loads(raw_text)
             results = []
             if isinstance(data, list):
+                titles_and_prices = []
                 for it in data[:max_items]:
                     try:
                         p_val = float(it.get("precio_compra", 0))
                         title = str(it.get("nombre", "")).strip()
                         if p_val > 0 and len(title) > 3:
-                            val = self._validate_and_sanitize_item({
-                                "nombre": title,
-                                "precio_compra": p_val,
-                                "foto_url": "",
-                                "url_compra": search_url,
-                                "sitio": store_name,
-                                "disponibilidad": f"En Catálogo {store_name}",
-                                "calificacion": 4.6,
-                                "envio": "Despacho a Domicilio"
-                            }, store_name, search_url)
-                            if val:
-                                results.append(val)
+                            titles_and_prices.append((title, p_val))
                     except (ValueError, TypeError):
                         continue
+
+                # Búsqueda concurrente de fotos reales de alta resolución para evitar placeholders vacíos
+                image_tasks = [self._find_real_product_image(t[0]) for t in titles_and_prices]
+                images = await asyncio.gather(*image_tasks, return_exceptions=True)
+
+                for (title, p_val), img in zip(titles_and_prices, images):
+                    img_src = img if (isinstance(img, str) and img.startswith("http")) else ""
+                    val = self._validate_and_sanitize_item({
+                        "nombre": title,
+                        "precio_compra": p_val,
+                        "foto_url": img_src,
+                        "url_compra": search_url,
+                        "sitio": store_name,
+                        "disponibilidad": f"En Catálogo {store_name}",
+                        "calificacion": 4.6,
+                        "envio": "Despacho a Domicilio"
+                    }, store_name, search_url)
+                    if val:
+                        results.append(val)
             return results
         except Exception as ex:
             logger.debug(f"Gemini fallback para {store_name} no disponible: {ex}")
