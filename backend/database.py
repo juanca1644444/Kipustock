@@ -2,6 +2,11 @@ import os
 import logging
 from pathlib import Path
 from typing import Dict, Any
+from dotenv import load_dotenv
+
+# Cargar automáticamente variables de entorno desde .env
+load_dotenv()
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
