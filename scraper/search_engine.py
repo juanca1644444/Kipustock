@@ -524,7 +524,12 @@ class SearchEngine:
 
         # 4. Validar imagen
         foto_url = str(raw.get("foto_url") or "").strip()
-        if not foto_url or not (foto_url.startswith("http://") or foto_url.startswith("https://") or foto_url.startswith("data:image")):
+        if not foto_url or not (
+            foto_url.startswith("http://") or
+            foto_url.startswith("https://") or
+            foto_url.startswith("data:image") or
+            foto_url.startswith("/uploads/")
+        ):
             foto_url = NEUTRAL_PLACEHOLDER_IMAGE
         elif "placeholder.webp" in foto_url:
             foto_url = NEUTRAL_PLACEHOLDER_IMAGE
@@ -736,17 +741,48 @@ class SearchEngine:
         """
         Respaldo ultraligero con Gemini AI cuando un portal en la nube bloquea la IP de Render ($0).
         Devuelve modelos reales, precios de mercado en Soles y fotografías reales obtenidas de catálogos peruanos.
+        Si la búsqueda proviene de una imagen subida por el usuario, prioriza el producto exacto de la foto.
         """
+        results = []
+        img_info = getattr(self, "_current_image_info", None)
+        img_url = getattr(self, "_current_image_url", None)
+
+        # 1. Si hay una imagen analizada con producto y precio detectado, inyectar el producto exacto
+        visual_title = ""
+        if img_info and img_info.get("producto_identificado"):
+            visual_title = str(img_info.get("producto_identificado")).strip()
+            visual_price = float(img_info.get("precio_referencia_sugerido") or 0.0)
+            if visual_price <= 0:
+                visual_price = 50.0
+
+            exact_item = self._validate_and_sanitize_item({
+                "nombre": visual_title,
+                "precio_compra": round(visual_price, 2),
+                "foto_url": img_url or "",
+                "url_compra": search_url,
+                "sitio": store_name,
+                "disponibilidad": f"En Catálogo {store_name}",
+                "calificacion": 4.8,
+                "envio": f"Envío {store_name}"
+            }, store_name, search_url)
+            if exact_item:
+                results.append(exact_item)
+
+        remaining_slots = max_items - len(results)
+        if remaining_slots <= 0:
+            return results
+
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
         if not api_key or api_key == "tu_api_key_gratuita_de_google_ai_studio":
-            return []
+            return results
 
         try:
             from google import genai
             client = genai.Client(api_key=api_key)
+            prompt_term = visual_title if visual_title else query
             prompt = (
-                f"Actua como analista de ecommerce en Peru. El cliente busca '{query}'. "
-                f"Devuelve exactamente {max_items} productos reales y populares disponibles para comprar en {store_name} Peru. "
+                f"Actua como analista de ecommerce en Peru. El cliente busca '{prompt_term}'. "
+                f"Devuelve exactamente {remaining_slots} productos reales y populares disponibles para comprar en {store_name} Peru. "
                 "Para cada uno indica nombre comercial exacto del modelo y precio estimado de mercado en Soles (PEN, float). "
                 "Responde unicamente en formato JSON sin explicaciones ni markdown: "
                 '[{"nombre": "Nombre exacto del producto", "precio_compra": 189.90}]'
@@ -764,13 +800,12 @@ class SearchEngine:
 
             response = await asyncio.to_thread(_call_gemini_models)
             if not response or not hasattr(response, "text") or not response.text:
-                return []
+                return results
             raw_text = response.text.strip().replace("```json", "").replace("```", "").strip()
             data = json.loads(raw_text)
-            results = []
             if isinstance(data, list):
                 titles_and_prices = []
-                for it in data[:max_items]:
+                for it in data[:remaining_slots]:
                     try:
                         p_val = float(it.get("precio_compra", 0))
                         title = str(it.get("nombre", "")).strip()
@@ -2658,6 +2693,24 @@ class SearchEngine:
         start_time = time.time()
         target_sites = target_sites or DEFAULT_SITES
         query_clean = normalize_search_query(query)
+
+        # Contexto de búsqueda visual por imagen
+        self._current_image_info = None
+        self._current_image_url = None
+        if image_filename:
+            try:
+                from backend.database import UPLOADS_DIR
+                from scraper.vision_ai import analyze_product_image
+                clean_img_name = Path(image_filename).name
+                local_path = UPLOADS_DIR / clean_img_name
+                if local_path.exists():
+                    self._current_image_url = f"/uploads/{clean_img_name}"
+                    self._current_image_info = analyze_product_image(str(local_path))
+                    logger.info(f"Visual AI Context cargado: {self._current_image_info.get('producto_identificado')} - S/ {self._current_image_info.get('precio_referencia_sugerido')}")
+                    if not query_clean or len(query_clean) < 4:
+                        query_clean = self._current_image_info.get("producto_identificado", query_clean)
+            except Exception as e_vis:
+                logger.debug(f"Error cargando contexto visual en search_core: {e_vis}")
 
         # Coincidencia con inventario propio en mano
         alerta_inventario = self.check_inventory_match(query_clean)
