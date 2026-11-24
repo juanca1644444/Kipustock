@@ -644,43 +644,67 @@ class SearchEngine:
             logger.debug(f"Error parseando VTEX para {site_name}: {e}")
         return items
 
-    async def _find_real_product_image(self, title: str, client: Optional[httpx.AsyncClient] = None) -> str:
+    async def _find_real_product_image(self, title: str, root_query: str = "", client: Optional[httpx.AsyncClient] = None) -> str:
         """
-        Localiza una fotografía real de alta resolución para el producto en catálogos abiertos de comercio peruano.
-        Ultraligero (HTTP < 2s con pool de conexiones), no consume RAM ni falla si no encuentra imagen.
+        Localiza una fotografía real verificada para el producto en catálogos abiertos peruanos (VTEX/Oechsle).
+        Valida que el producto devuelto coincida semánticamente con el artículo buscado,
+        evitando categóricamente asociar imágenes erróneas (ej. perfumes o coches de bebé a aspiradoras).
         """
         if not title:
             return ""
-        clean_title = normalize_search_query(title)
-        query_words = " ".join(clean_title.split()[:4])
-        encoded = quote(query_words)
+        
+        stop_words = {
+            "de", "para", "con", "sin", "en", "y", "el", "la", "un", "una", "del", "al", "los", "las",
+            "su", "sus", "por", "sobre", "mas", "alta", "doble", "uso", "accesorios", "coche", "set", "pack"
+        }
+        words = [w.lower() for w in re.findall(r'\b[a-zA-ZáéíóúñÁÉÍÓÚÑ0-9]{3,}\b', title) if w.lower() not in stop_words]
+        if not words:
+            return ""
+
+        # Identificar sustantivo principal (priorizando el término de búsqueda original del usuario si existe)
+        clean_root = normalize_search_query(root_query).lower() if root_query else ""
+        root_words = [w for w in clean_root.split() if w not in stop_words and len(w) >= 3]
+        primary_noun = root_words[0] if root_words else words[0]
+
+        # Tomar hasta 3 palabras clave sustantivas
+        search_keywords = words[:3]
+        search_phrase = " ".join(search_keywords)
+        encoded = quote(search_phrase)
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         }
-        
-        async def _query_url(c: httpx.AsyncClient, u: str) -> str:
+
+        async def _query_and_validate(c: httpx.AsyncClient, u: str) -> str:
             try:
-                resp = await c.get(u, timeout=2.2)
+                resp = await c.get(u, timeout=2.5)
                 if resp.status_code in [200, 206]:
                     data = resp.json()
-                    if isinstance(data, list) and len(data) > 0:
-                        first_item = data[0]
-                        items_list = first_item.get("items", [])
-                        if items_list and items_list[0].get("images"):
-                            return items_list[0]["images"][0].get("imageUrl", "")
+                    if isinstance(data, list):
+                        for p in data[:6]:
+                            p_name = (p.get("productName") or "").lower()
+                            # Validación estricta: el nombre del producto debe contener el sustantivo principal
+                            # Si buscamos 'aspiradora', el resultado DEBE tener 'aspiradora' o 'vacuum'
+                            noun_stem = primary_noun.rstrip("s")
+                            if primary_noun in p_name or noun_stem in p_name:
+                                items_list = p.get("items", [])
+                                if items_list and items_list[0].get("images"):
+                                    img_url = items_list[0]["images"][0].get("imageUrl", "")
+                                    if img_url:
+                                        return img_url
             except Exception:
                 pass
             return ""
 
         url = f"https://www.oechsle.pe/api/catalog_system/pub/products/search?ft={encoded}"
         if client:
-            res = await _query_url(client, url)
+            res = await _query_and_validate(client, url)
             if res:
                 return res
         else:
             try:
-                async with httpx.AsyncClient(headers=headers, timeout=2.2, follow_redirects=True) as local_c:
-                    res = await _query_url(local_c, url)
+                async with httpx.AsyncClient(headers=headers, timeout=2.5, follow_redirects=True) as local_c:
+                    res = await _query_and_validate(local_c, url)
                     if res:
                         return res
             except Exception:
@@ -745,7 +769,7 @@ class SearchEngine:
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                 }
                 async with httpx.AsyncClient(headers=img_headers, timeout=2.5, follow_redirects=True) as shared_img_client:
-                    image_tasks = [self._find_real_product_image(t[0], client=shared_img_client) for t in titles_and_prices]
+                    image_tasks = [self._find_real_product_image(t[0], root_query=query, client=shared_img_client) for t in titles_and_prices]
                     images = await asyncio.gather(*image_tasks, return_exceptions=True)
 
                 for (title, p_val), img in zip(titles_and_prices, images):
