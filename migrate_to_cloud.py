@@ -310,6 +310,19 @@ def migrate_to_database(source_session, target_engine, dry_run: bool = False):
         target_session.close()
 
 
+def resolve_source_db() -> Path:
+    """Detecta automáticamente el archivo de base de datos local con datos."""
+    candidates = [
+        DATA_DIR / "sistema.db",
+        BASE_DIR / "kipustock.db",
+        DATA_DIR / "kipustock.db"
+    ]
+    for c in candidates:
+        if c.exists() and c.stat().st_size > 0:
+            return c
+    return DATA_DIR / "sistema.db"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Migrador de datos KipuStock a la nube ($0)")
     parser.add_argument("--url", type=str, help="DATABASE_URL de destino (PostgreSQL / Supabase / Neon)")
@@ -317,11 +330,13 @@ def main():
     parser.add_argument("--export-json", action="store_true", help="Genera backup JSON de los datos actuales")
     args = parser.parse_args()
 
-    if not LOCAL_DB_FILE.exists():
-        logger.error(f"Archivo de base de datos local no encontrado: {LOCAL_DB_FILE}")
+    source_db_file = resolve_source_db()
+    if not source_db_file.exists():
+        logger.error(f"Archivo de base de datos local no encontrado: {source_db_file}")
         sys.exit(1)
 
-    source_engine = create_engine(f"sqlite:///{LOCAL_DB_FILE}", connect_args={"check_same_thread": False})
+    logger.info(f"Origen de datos local detectado: {source_db_file.name} ({source_db_file.stat().st_size} bytes)")
+    source_engine = create_engine(f"sqlite:///{source_db_file}", connect_args={"check_same_thread": False})
     SourceSession = sessionmaker(bind=source_engine)
     source_session = SourceSession()
 
