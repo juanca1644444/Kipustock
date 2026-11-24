@@ -19,6 +19,8 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from urllib.parse import quote_plus
+import httpx
+from bs4 import BeautifulSoup
 
 from sqlalchemy.orm import Session
 from backend.models import ProductoPropio, CoincidenciaInventario, TiendaPersonalizada
@@ -39,6 +41,20 @@ IS_CLOUD_ENV = (
     os.getenv("RENDER", "").strip().lower() in ["true", "1", "yes"] or
     bool(os.getenv("RENDER_SERVICE_ID"))
 )
+
+def is_playwright_available() -> bool:
+    """
+    Determina si Playwright con Chromium está realmente disponible en el host.
+    En la nube (Render, Vercel, Docker sin GUI o sin binarios ms-playwright) devuelve False
+    inmediatamente para respetar el límite de 512 MB RAM y evitar excepciones de binarios ausentes.
+    """
+    if IS_CLOUD_ENV:
+        return False
+    try:
+        from playwright.sync_api import sync_playwright
+        return True
+    except Exception:
+        return False
 
 
 def normalize_search_query(raw_query: str) -> str:
@@ -525,6 +541,109 @@ class SearchEngine:
             "envio": raw.get("envio") or "Envío a Nivel Nacional"
         }
 
+    def _extract_nextjs_products(
+        self,
+        html_text: str,
+        site_name: str,
+        search_url: str,
+        max_items: int = 6
+    ) -> List[Dict[str, Any]]:
+        """Extrae productos directamente del bloque __NEXT_DATA__ de Falabella o Sodimac sin usar navegador."""
+        items = []
+        try:
+            soup = BeautifulSoup(html_text, 'html.parser')
+            script = soup.find('script', id='__NEXT_DATA__')
+            if not script or not script.string:
+                return []
+            data = json.loads(script.string)
+            raw_results = data.get('props', {}).get('pageProps', {}).get('results', [])
+            for p in raw_results[:max_items]:
+                title = p.get('displayName') or p.get('name') or ''
+                url = p.get('url') or search_url
+                if not url.startswith('http'):
+                    if 'sodimac' in search_url:
+                        url = f'https://sodimac.falabella.com.pe{url}'
+                    else:
+                        url = f'https://www.falabella.com.pe{url}'
+
+                price_val = 0.0
+                prices = p.get('prices', [])
+                for pr in prices:
+                    price_arr = pr.get('price', [])
+                    if price_arr:
+                        raw_p = str(price_arr[0]).replace(',', '')
+                        try:
+                            p_cand = float(re.sub(r'[^\d.]', '', raw_p))
+                            if p_cand > 0:
+                                price_val = p_cand
+                                break
+                        except ValueError:
+                            continue
+
+                media = p.get('mediaUrls') or p.get('media') or []
+                img_src = media[0] if media and isinstance(media, list) else ""
+
+                if title and price_val > 0:
+                    items.append({
+                        "nombre": title,
+                        "precio_compra": price_val,
+                        "foto_url": img_src,
+                        "url_compra": url,
+                        "sitio": site_name,
+                        "disponibilidad": f"En Stock {site_name}",
+                        "calificacion": 4.7,
+                        "envio": "Despacho / Retiro en Tienda"
+                    })
+        except Exception as e:
+            logger.debug(f"Error parseando __NEXT_DATA__ para {site_name}: {e}")
+        return items
+
+    def _extract_vtex_products(
+        self,
+        vtex_json: list,
+        site_name: str,
+        search_url: str,
+        max_items: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Extrae productos estructurados desde la API pública de catálogo VTEX (PlazaVea, Promart)."""
+        items = []
+        try:
+            if not isinstance(vtex_json, list):
+                return []
+            for p in vtex_json[:max_items]:
+                title = p.get('productTitle') or p.get('productName') or ''
+                link = p.get('link') or search_url
+                sub_items = p.get('items', [])
+                price_val = 0.0
+                img_src = ""
+                if sub_items:
+                    first_sub = sub_items[0]
+                    images = first_sub.get('images', [])
+                    if images:
+                        img_src = images[0].get('imageUrl', '')
+                    sellers = first_sub.get('sellers', [])
+                    if sellers:
+                        comm = sellers[0].get('commertialOffer', {})
+                        try:
+                            price_val = float(comm.get('Price', 0.0) or 0.0)
+                        except (ValueError, TypeError):
+                            price_val = 0.0
+
+                if title and price_val > 0:
+                    items.append({
+                        "nombre": title,
+                        "precio_compra": price_val,
+                        "foto_url": img_src,
+                        "url_compra": link,
+                        "sitio": site_name,
+                        "disponibilidad": f"Disponible en {site_name}",
+                        "calificacion": 4.6,
+                        "envio": "Despacho a Domicilio"
+                    })
+        except Exception as e:
+            logger.debug(f"Error parseando VTEX para {site_name}: {e}")
+        return items
+
     # ==================================================================
     # EXTRACTORES INDEPENDIENTES POR TIENDA CON TIMEOUT CONTROLADO
     # ==================================================================
@@ -534,8 +653,8 @@ class SearchEngine:
         encoded_query = quote_plus(query.strip())
         search_url = f"https://listado.mercadolibre.com.pe/{encoded_query}"
 
-        # En modo Cloud $0 (Render / Vercel), evitar proceso pesado Chromium
-        if IS_CLOUD_ENV:
+        # En modo Cloud $0 (Render / Vercel) o si Chromium no está disponible
+        if IS_CLOUD_ENV or not is_playwright_available():
             return {
                 "tienda": "Mercado Libre",
                 "items": [],
@@ -644,6 +763,42 @@ class SearchEngine:
         status_code = "sin_resultados"
         mensaje = f"0 productos encontrados en catálogo de Falabella para '{query}'."
 
+        # 1. Consulta HTTP ultraligera (funciona en la nube $0 y en local sin overhead de RAM)
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "es-PE,es;q=0.9,en;q=0.8"
+            }
+            async with httpx.AsyncClient(headers=headers, timeout=10.0, follow_redirects=True) as client:
+                resp = await client.get(search_url)
+                if resp.status_code == 200:
+                    raw_items = self._extract_nextjs_products(resp.text, "Falabella", search_url, max_items)
+                    for it in raw_items:
+                        val = self._validate_and_sanitize_item(it, "Falabella", search_url)
+                        if val:
+                            results.append(val)
+                    if results:
+                        return {
+                            "tienda": "Falabella",
+                            "items": results,
+                            "status": "ok",
+                            "mensaje": f"{len(results)} productos reales encontrados en Falabella.",
+                            "search_url": search_url
+                        }
+        except Exception as e_http:
+            logger.debug(f"HTTP fallback Falabella: {e_http}")
+
+        # En modo Cloud $0 o si Chromium no está instalado, evitar lanzar Playwright
+        if IS_CLOUD_ENV or not is_playwright_available():
+            return {
+                "tienda": "Falabella",
+                "items": results,
+                "status": "ok" if results else "info",
+                "mensaje": f"{len(results)} productos reales encontrados en Falabella." if results else "Modo Cloud $0: Consulta directa en Falabella disponible con el botón de tienda.",
+                "search_url": search_url
+            }
+
         try:
             from playwright.async_api import async_playwright
             async with async_playwright() as p:
@@ -730,8 +885,13 @@ class SearchEngine:
                 finally:
                     await browser.close()
         except Exception as ex:
-            status_code = "error"
-            mensaje = f"Error al consultar Falabella: {str(ex)[:80]}"
+            err_str = str(ex)
+            if any(k in err_str.lower() for k in ["executable", "doesn't exist", "browser", "playwright"]):
+                status_code = "info"
+                mensaje = "Modo Cloud $0: Consulta directa en Falabella disponible con el botón de tienda."
+            else:
+                status_code = "error"
+                mensaje = f"Aviso Falabella: {err_str[:80]}"
 
         return {
             "tienda": "Falabella",
@@ -746,13 +906,13 @@ class SearchEngine:
         encoded_query = quote_plus(query.strip())
         search_url = f"https://simple.ripley.com.pe/search/{encoded_query}"
 
-        # En modo Cloud $0 (Render / Vercel), evitar proceso pesado Chromium
-        if IS_CLOUD_ENV:
+        # En modo Cloud $0 (Render / Vercel) o si Chromium no está disponible
+        if IS_CLOUD_ENV or not is_playwright_available():
             return {
                 "tienda": "Ripley",
                 "items": [],
                 "status": "info",
-                "mensaje": f"Modo Cloud $0: Consulta directa en Ripley disponible con el botón de tienda.",
+                "mensaje": "Modo Cloud $0: Consulta directa en Ripley disponible con el botón de tienda.",
                 "search_url": search_url
             }
 
@@ -883,8 +1043,13 @@ class SearchEngine:
                 finally:
                     await browser.close()
         except Exception as ex:
-            status_code = "error"
-            mensaje = f"Error al consultar Ripley: {str(ex)[:80]}"
+            err_str = str(ex)
+            if any(k in err_str.lower() for k in ["executable", "doesn't exist", "browser", "playwright"]):
+                status_code = "info"
+                mensaje = "Modo Cloud $0: Consulta directa en Ripley disponible con el botón de tienda."
+            else:
+                status_code = "error"
+                mensaje = f"Aviso Ripley: {err_str[:80]}"
 
         return {
             "tienda": "Ripley",
@@ -901,6 +1066,42 @@ class SearchEngine:
         results = []
         status_code = "sin_resultados"
         mensaje = f"0 productos encontrados en Sodimac para '{query}'."
+
+        # 1. Consulta HTTP ultraligera (funciona en la nube $0 y en local sin overhead de RAM)
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "es-PE,es;q=0.9,en;q=0.8"
+            }
+            async with httpx.AsyncClient(headers=headers, timeout=10.0, follow_redirects=True) as client:
+                resp = await client.get(search_url)
+                if resp.status_code == 200:
+                    raw_items = self._extract_nextjs_products(resp.text, "Sodimac", search_url, max_items)
+                    for it in raw_items:
+                        val = self._validate_and_sanitize_item(it, "Sodimac", search_url)
+                        if val:
+                            results.append(val)
+                    if results:
+                        return {
+                            "tienda": "Sodimac",
+                            "items": results,
+                            "status": "ok",
+                            "mensaje": f"{len(results)} productos reales encontrados en Sodimac.",
+                            "search_url": search_url
+                        }
+        except Exception as e_http:
+            logger.debug(f"HTTP fallback Sodimac: {e_http}")
+
+        # En modo Cloud $0 o si Chromium no está instalado, evitar lanzar Playwright
+        if IS_CLOUD_ENV or not is_playwright_available():
+            return {
+                "tienda": "Sodimac",
+                "items": results,
+                "status": "ok" if results else "info",
+                "mensaje": f"{len(results)} productos reales encontrados en Sodimac." if results else "Modo Cloud $0: Consulta directa en Sodimac disponible con el botón de tienda.",
+                "search_url": search_url
+            }
 
         try:
             from playwright.async_api import async_playwright
@@ -988,8 +1189,13 @@ class SearchEngine:
                 finally:
                     await browser.close()
         except Exception as ex:
-            status_code = "error"
-            mensaje = f"Error al consultar Sodimac: {str(ex)[:80]}"
+            err_str = str(ex)
+            if any(k in err_str.lower() for k in ["executable", "doesn't exist", "browser", "playwright"]):
+                status_code = "info"
+                mensaje = "Modo Cloud $0: Consulta directa en Sodimac disponible con el botón de tienda."
+            else:
+                status_code = "error"
+                mensaje = f"Aviso Sodimac: {err_str[:80]}"
 
         return {
             "tienda": "Sodimac",
@@ -1003,6 +1209,17 @@ class SearchEngine:
         """Extractor independiente para AliExpress (mayorista/importación)."""
         encoded_query = quote_plus(query.strip())
         search_url = f"https://es.aliexpress.com/wholesale?SearchText={encoded_query}"
+
+        # En modo Cloud $0 o si Chromium no está disponible
+        if IS_CLOUD_ENV or not is_playwright_available():
+            return {
+                "tienda": "AliExpress",
+                "items": [],
+                "status": "info",
+                "mensaje": "Modo Cloud $0: Consulta directa en AliExpress disponible con el botón de tienda.",
+                "search_url": search_url
+            }
+
         results = []
         status_code = "sin_resultados"
         mensaje = f"0 productos encontrados en AliExpress para '{query}'."
@@ -1079,6 +1296,17 @@ class SearchEngine:
         """Extractor independiente para Facebook Marketplace (Lima / Perú)."""
         encoded_query = quote_plus(query.strip())
         search_url = f"https://www.facebook.com/marketplace/lima/search?query={encoded_query}"
+
+        # En modo Cloud $0 o si Chromium no está disponible
+        if IS_CLOUD_ENV or not is_playwright_available():
+            return {
+                "tienda": "Facebook Marketplace",
+                "items": [],
+                "status": "info",
+                "mensaje": "Modo Cloud $0: Consulta directa en Facebook Marketplace disponible con el botón de tienda.",
+                "search_url": search_url
+            }
+
         results = []
         status_code = "sin_resultados"
         mensaje = f"Sin publicaciones encontradas en Facebook Marketplace para '{query}'."
@@ -1182,6 +1410,18 @@ class SearchEngine:
         """
         encoded_query = quote_plus(query.strip())
         search_url = f"https://www.temu.com/pe/search_result.html?search_key={encoded_query}"
+
+        # En modo Cloud $0 o si Chromium no está disponible
+        if IS_CLOUD_ENV or not is_playwright_available():
+            return {
+                "tienda": "Temu",
+                "items": [],
+                "status": "info",
+                "mensaje": "Modo Cloud $0: Consulta directa en Temu disponible con el botón de tienda.",
+                "search_url": search_url,
+                "requires_unlock": False
+            }
+
         results = []
         status_code = "sin_resultados"
         mensaje = f"Sin productos encontrados en Temu Perú para '{query}'."
@@ -1473,6 +1713,17 @@ class SearchEngine:
         """Extractor / Conector para Búsqueda Web Abierta (Google Shopping / Comparador Web)."""
         encoded_query = quote_plus(query.strip())
         search_url = f"https://www.google.com/search?q={encoded_query}+comprar+peru+precio&tbm=shop"
+
+        # En modo Cloud $0 o si Chromium no está disponible
+        if IS_CLOUD_ENV or not is_playwright_available():
+            return {
+                "tienda": "Web / Google Shopping",
+                "items": [],
+                "status": "info",
+                "mensaje": "Modo Cloud $0: Consulta web en Google Shopping disponible con el botón de tienda.",
+                "search_url": search_url
+            }
+
         results = []
         status_code = "ok"
         mensaje = f"Búsqueda web en Google Shopping disponible para '{query}'."
@@ -1551,6 +1802,41 @@ class SearchEngine:
         status_code = "sin_resultados"
         mensaje = f"0 productos encontrados en catálogo de PlazaVea para '{query}'."
 
+        # 1. Consulta HTTP ultraligera a la API pública de catálogo VTEX
+        try:
+            vtex_url = f"https://www.plazavea.com.pe/api/catalog_system/pub/products/search?ft={encoded_query}"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            }
+            async with httpx.AsyncClient(headers=headers, timeout=8.0, follow_redirects=True) as client:
+                resp = await client.get(vtex_url)
+                if resp.status_code in [200, 206]:
+                    raw_items = self._extract_vtex_products(resp.json(), "PlazaVea", search_url, max_items)
+                    for it in raw_items:
+                        val = self._validate_and_sanitize_item(it, "PlazaVea", search_url)
+                        if val:
+                            results.append(val)
+                    if results:
+                        return {
+                            "tienda": "PlazaVea",
+                            "items": results,
+                            "status": "ok",
+                            "mensaje": f"{len(results)} productos reales encontrados en PlazaVea.",
+                            "search_url": search_url
+                        }
+        except Exception as e_vtex:
+            logger.debug(f"HTTP VTEX PlazaVea: {e_vtex}")
+
+        # En modo Cloud $0 o si Chromium no está instalado, evitar lanzar Playwright
+        if IS_CLOUD_ENV or not is_playwright_available():
+            return {
+                "tienda": "PlazaVea",
+                "items": results,
+                "status": "ok" if results else "info",
+                "mensaje": f"{len(results)} productos reales encontrados en PlazaVea." if results else "Modo Cloud $0: Consulta directa en PlazaVea disponible con el botón de tienda.",
+                "search_url": search_url
+            }
+
         try:
             from playwright.async_api import async_playwright
             async with async_playwright() as p:
@@ -1605,8 +1891,13 @@ class SearchEngine:
                 finally:
                     await browser.close()
         except Exception as ex:
-            status_code = "error"
-            mensaje = f"Error al consultar PlazaVea: {str(ex)[:80]}"
+            err_str = str(ex)
+            if any(k in err_str.lower() for k in ["executable", "doesn't exist", "browser", "playwright"]):
+                status_code = "info"
+                mensaje = "Modo Cloud $0: Consulta directa en PlazaVea disponible con el botón de tienda."
+            else:
+                status_code = "error"
+                mensaje = f"Aviso PlazaVea: {err_str[:80]}"
 
         return {
             "tienda": "PlazaVea",
@@ -1623,6 +1914,41 @@ class SearchEngine:
         results = []
         status_code = "sin_resultados"
         mensaje = f"0 productos encontrados en catálogo de Promart para '{query}'."
+
+        # 1. Consulta HTTP ultraligera a la API pública de catálogo VTEX
+        try:
+            vtex_url = f"https://www.promart.pe/api/catalog_system/pub/products/search?ft={encoded_query}"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            }
+            async with httpx.AsyncClient(headers=headers, timeout=8.0, follow_redirects=True) as client:
+                resp = await client.get(vtex_url)
+                if resp.status_code in [200, 206]:
+                    raw_items = self._extract_vtex_products(resp.json(), "Promart", search_url, max_items)
+                    for it in raw_items:
+                        val = self._validate_and_sanitize_item(it, "Promart", search_url)
+                        if val:
+                            results.append(val)
+                    if results:
+                        return {
+                            "tienda": "Promart",
+                            "items": results,
+                            "status": "ok",
+                            "mensaje": f"{len(results)} productos reales encontrados en Promart.",
+                            "search_url": search_url
+                        }
+        except Exception as e_vtex:
+            logger.debug(f"HTTP VTEX Promart: {e_vtex}")
+
+        # En modo Cloud $0 o si Chromium no está instalado, evitar lanzar Playwright
+        if IS_CLOUD_ENV or not is_playwright_available():
+            return {
+                "tienda": "Promart",
+                "items": results,
+                "status": "ok" if results else "info",
+                "mensaje": f"{len(results)} productos reales encontrados en Promart." if results else "Modo Cloud $0: Consulta directa en Promart disponible con el botón de tienda.",
+                "search_url": search_url
+            }
 
         try:
             from playwright.async_api import async_playwright
@@ -1678,8 +2004,13 @@ class SearchEngine:
                 finally:
                     await browser.close()
         except Exception as ex:
-            status_code = "error"
-            mensaje = f"Error al consultar Promart: {str(ex)[:80]}"
+            err_str = str(ex)
+            if any(k in err_str.lower() for k in ["executable", "doesn't exist", "browser", "playwright"]):
+                status_code = "info"
+                mensaje = "Modo Cloud $0: Consulta directa en Promart disponible con el botón de tienda."
+            else:
+                status_code = "error"
+                mensaje = f"Aviso Promart: {err_str[:80]}"
 
         return {
             "tienda": "Promart",
@@ -1707,6 +2038,19 @@ class SearchEngine:
         else:
             sep = "&" if "?" in store.url_web else "?"
             search_url = f"{store.url_web}{sep}q={encoded_query}"
+
+        # En modo Cloud $0 o si Chromium no está disponible
+        if IS_CLOUD_ENV or not is_playwright_available():
+            return {
+                "tienda": store.nombre,
+                "items": [],
+                "status": "info",
+                "mensaje": f"Modo Cloud $0: Consulta directa disponible para {store.nombre} con el botón de tienda.",
+                "search_url": search_url,
+                "is_custom": True,
+                "url_web": store.url_web,
+                "contacto_whatsapp": store.contacto_whatsapp
+            }
 
         results = []
         status_code = "sin_resultados"
@@ -2103,11 +2447,20 @@ class SearchEngine:
                 }
             except Exception as ex:
                 logger.warning(f"Error en extractor de {site_name}: {ex}")
+                err_msg = str(ex)
+                if any(k in err_msg.lower() for k in ["executable", "doesn't exist", "playwright", "browser", "not found"]):
+                    return {
+                        "tienda": site_name,
+                        "items": [],
+                        "status": "info",
+                        "mensaje": f"Modo Cloud $0: Consulta directa en {site_name} disponible con el botón de tienda.",
+                        "search_url": ""
+                    }
                 return {
                     "tienda": site_name,
                     "items": [],
                     "status": "error",
-                    "mensaje": f"Aviso {site_name}: {str(ex)[:80]}",
+                    "mensaje": f"Aviso {site_name}: {err_msg[:80]}",
                     "search_url": ""
                 }
 

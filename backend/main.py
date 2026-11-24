@@ -492,11 +492,12 @@ def get_config_status():
     has_gemini = bool(api_key and api_key != "tu_api_key_gratuita_de_google_ai_studio")
     default_comm = float(os.getenv("DEFAULT_COMMISSION_PERCENT", "12.0"))
     db_stat = get_db_status()
+    from scraper.search_engine import is_playwright_available
     return {
         "gemini_configured": has_gemini,
         "gemini_model": "gemini-3.8-flash",
         "default_commission": default_comm,
-        "playwright_ready": True,
+        "playwright_ready": is_playwright_available(),
         "version": "2.5.0",
         "modo": "Gemini 3.8 Flash Online" if has_gemini else "Modo Fallback Heurístico Local",
         "db_status": db_stat
@@ -765,6 +766,14 @@ async def unlock_store_browser_session(
     try:
         tienda_clean = (tienda or "Temu").strip()
         logger.info(f"[DESBLOQUEO] Solicitud para tienda: '{tienda_clean}'")
+
+        from scraper.search_engine import IS_CLOUD_ENV, is_playwright_available
+        if IS_CLOUD_ENV or not is_playwright_available():
+            return {
+                "success": False,
+                "status": "cloud_mode",
+                "message": "En la nube ($0) el desbloqueo interactivo por pantalla no aplica. Consulta directamente con el botón de tienda."
+            }
 
         # 1. Limpiar caché previo de esta tienda para que la próxima búsqueda consulte en vivo
         try:
