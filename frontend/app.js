@@ -694,24 +694,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
     showToast("Analizando imagen con Gemini Vision...", "info");
 
+    // Desplegar de inmediato la tarjeta de análisis con estado de carga para feedback visual instantáneo
+    if (DOM.visionAiAnalysisCard) {
+      DOM.visionAiAnalysisCard.classList.remove("hidden");
+      DOM.visionAiStatusTitle.textContent = "Reconociendo con Gemini Vision...";
+      DOM.visionAiProdTitle.textContent = "Analizando fotografía con IA...";
+      DOM.visionAiModelText.textContent = "Identificando modelo, marca y cotización de referencia...";
+      DOM.visionAiCategoryTag.textContent = "Escaneando...";
+      DOM.visionAiPriceRef.textContent = "S/ --.--";
+      DOM.visionAiQueriesList.innerHTML = `<span class="query-chip" style="opacity: 0.7;">✨ Escaneando características visuales...</span>`;
+    }
+
     // Enviar foto para reconocimiento inteligente multimodal con Gemini
     analyzeImageWithVisionAI(file).then(aiData => {
       state.uploadedSearchImage = aiData.url || file.name;
-
-      // Si la IA detectó que la imagen no es un producto físico comercial (ej. captura de pantalla de la interfaz)
-      const prodName = (aiData.producto_identificado || "").trim();
-      const isPlaceholder = prodName.toLowerCase().includes("producto por identificar") || prodName.toLowerCase().includes("producto para identificar");
-      if (aiData.es_producto_valido === false || isPlaceholder || !prodName) {
-        showToast("⚠️ La imagen pegada es una captura de pantalla de la aplicación. Por favor pega o sube la foto directa del producto físico a cotizar.", "warning");
-        if (DOM.visionAiAnalysisCard) {
-          DOM.visionAiAnalysisCard.classList.remove("hidden");
-          DOM.visionAiProdTitle.textContent = "Captura de Pantalla (No es un artículo físico)";
-          DOM.visionAiModelText.textContent = "Sube o copia la fotografía del producto real que deseas buscar.";
-          DOM.visionAiCategoryTag.textContent = "Captura de Pantalla";
-          DOM.visionAiQueriesList.innerHTML = "";
-        }
-        return;
-      }
 
       // Autocompletar barra de búsqueda con el producto identificado
       if (aiData.producto_identificado) {
@@ -755,7 +751,16 @@ document.addEventListener("DOMContentLoaded", () => {
       performSearch();
     }).catch(err => {
       console.error("Error analizando imagen:", err);
-      showToast("Aviso: modo visual en espera", "warning");
+      showToast("Aviso: No se pudo contactar con Gemini Vision. Puedes ingresar el término manualmente.", "warning");
+      if (DOM.visionAiAnalysisCard) {
+        DOM.visionAiAnalysisCard.classList.remove("hidden");
+        DOM.visionAiStatusTitle.textContent = "Detección Manual";
+        DOM.visionAiProdTitle.textContent = "Foto adjunta para búsqueda";
+        DOM.visionAiModelText.textContent = "Escribe el nombre del artículo en la barra de búsqueda para rastrearlo.";
+        DOM.visionAiCategoryTag.textContent = "Manual";
+        DOM.visionAiPriceRef.textContent = "S/ 0.00";
+        DOM.visionAiQueriesList.innerHTML = `<span class="query-chip">Escribe el término en el buscador</span>`;
+      }
     });
   }
 

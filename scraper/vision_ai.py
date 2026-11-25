@@ -18,33 +18,24 @@ load_dotenv()
 logger = logging.getLogger("kipustock.vision_ai")
 
 PROMPT_ANALISIS_VISUAL = """
-Analiza minuciosamente la fotografía para un sistema de arbitraje comercial y gestión de inventario en Perú.
-IMPORTANTE: Si la imagen es una captura de pantalla de software, interfaz de usuario de KipuStock, un chat o texto sin ningún producto físico comercial visible, devuelve:
+Analiza minuciosamente esta imagen para un sistema de arbitraje comercial y cotización en Perú.
+La imagen puede ser la foto de un producto físico, una captura de pantalla, un boleto/itinerario de pasaje, una etiqueta o ficha técnica.
+Identifica con máxima precisión el artículo, servicio, pasaje, modelo o concepto comercial que se muestra.
+Si es un pasaje o vuelo, incluye aerolínea, origen y destino si son visibles (ej. 'Pasaje Aéreo JetSMART Lima a Cajamarca').
+Devuelve EXCLUSIVAMENTE un único objeto JSON válido (un solo objeto {}, sin bloques markdown ni texto adicional) con esta estructura exacta:
 {
-  "es_producto_valido": false,
-  "producto_identificado": "",
-  "marca_modelo": "No visible",
-  "categoria": "Captura de interfaz",
-  "consultas_busqueda": [],
-  "precio_referencia_sugerido": 0.0,
-  "notas_visuales": "La imagen pegada es una captura de pantalla de la interfaz de la aplicación, no una foto de un producto comercial."
-}
-
-Si la imagen sí muestra un producto físico comercial (ropa, accesorio, calzado, herramienta, vehículo, tecnología, etc.), devuelve EXCLUSIVAMENTE un único objeto JSON válido con esta estructura:
-{
-  "es_producto_valido": true,
-  "producto_identificado": "Nombre comercial claro y descriptivo del producto",
-  "marca_modelo": "Marca y modelo o número de parte exacto visible (o 'Genérico / No visible')",
-  "categoria": "Categoría comercial (ej. Herramientas, Tecnología, Ropa y Accesorios, Hogar, Calzado, etc.)",
+  "producto_identificado": "Nombre comercial claro y descriptivo del producto, pasaje o servicio",
+  "marca_modelo": "Marca, aerolínea, modelo o código identificable (o 'Genérico / No visible')",
+  "categoria": "Categoría comercial (ej. Vuelos y Viajes, Ropa y Accesorios, Herramientas, Tecnología, etc.)",
   "consultas_busqueda": [
-    "Consulta óptima 1 (ej. Marca + Modelo exacto)",
-    "Consulta óptima 2 (ej. Nombre comercial + características principales)",
-    "Consulta óptima 3 (ej. Término clave para encontrarlo en Mercado Libre o Falabella)"
+    "Consulta de búsqueda óptima 1 (ej. Nombre específico + modelo o ruta)",
+    "Consulta de búsqueda óptima 2 (ej. Término clave comercial)",
+    "Consulta de búsqueda óptima 3 (ej. Término amplio para portales en Perú)"
   ],
   "precio_referencia_sugerido": 120.00,
-  "notas_visuales": "Detalles relevantes detectados como estado físico, accesorios visibles o versión"
+  "notas_visuales": "Detalles relevantes detectados en la imagen"
 }
-Nota: El precio de referencia debe ser un número flotante estimado en Soles peruanos (PEN / S/). Devuelve SOLO el objeto JSON sin bloques markdown.
+Nota: El precio de referencia debe ser un número flotante estimado en Soles peruanos (PEN / S/). Devuelve SOLO el objeto JSON.
 """
 
 def get_gemini_client():
@@ -113,7 +104,8 @@ def analyze_product_image(image_path: str, original_filename: Optional[str] = No
             "gemini-3.5-flash-lite",
             "gemini-3.1-flash-lite",
             "gemini-3.8-flash",
-            "gemini-2.5-flash"
+            "gemini-2.5-flash",
+            "gemini-3.5-flash"
         ]
 
         last_error = None
