@@ -1,24 +1,29 @@
 """
 Módulo de Reconocimiento Visual de Productos con Gemini Vision (Fase 2)
-Usa el modelo gratuito 'gemini-2.5-flash' mediante el SDK oficial 'google-genai'.
+Usa el modelo gratuito 'gemini-3.5-flash-lite' y la familia Gemini Flash mediante el SDK oficial 'google-genai'.
 """
 
 import os
+import re
 import json
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
+from dotenv import load_dotenv
 from PIL import Image
+
+# Cargar automáticamente variables de entorno
+load_dotenv()
 
 logger = logging.getLogger("kipustock.vision_ai")
 
 PROMPT_ANALISIS_VISUAL = """
 Analiza minuciosamente la fotografía de este producto para un sistema de arbitraje comercial y gestión de inventario en Perú.
-Devuelve EXCLUSIVAMENTE un objeto JSON válido (sin formato Markdown adicional ni bloques de texto) con esta estructura exacta:
+Devuelve EXCLUSIVAMENTE un único objeto JSON válido (un solo objeto {}, NUNCA una lista ni corchetes []) con esta estructura exacta:
 {
   "producto_identificado": "Nombre comercial claro y descriptivo del producto",
   "marca_modelo": "Marca y modelo o número de parte exacto visible (o 'Genérico / No visible')",
-  "categoria": "Categoría comercial (ej. Herramientas, Tecnología, Hogar, Calzado, etc.)",
+  "categoria": "Categoría comercial (ej. Herramientas, Tecnología, Ropa y Accesorios, Hogar, Calzado, etc.)",
   "consultas_busqueda": [
     "Consulta óptima 1 (ej. Marca + Modelo exacto)",
     "Consulta óptima 2 (ej. Nombre comercial + características principales)",
@@ -27,7 +32,7 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido (sin formato Markdown adicional n
   "precio_referencia_sugerido": 120.00,
   "notas_visuales": "Detalles relevantes detectados como estado físico, accesorios visibles o versión"
 }
-Nota: El precio de referencia debe ser un número flotante estimado en Soles peruanos (PEN / S/).
+Nota: El precio de referencia debe ser un número flotante estimado en Soles peruanos (PEN / S/). Devuelve SOLO el objeto JSON.
 """
 
 def get_gemini_client():
@@ -60,10 +65,11 @@ def analyze_product_image(image_path: str, original_filename: Optional[str] = No
             "precio_referencia_sugerido": 0.0
         }
 
-    # Obtener nombre legible para caso de fallback
+    # Obtener nombre legible para caso de fallback evitando nombres automáticos de portapapeles
     raw_name = Path(original_filename).stem if original_filename else path_obj.stem
     is_hash = len(raw_name) == 32 and all(c in '0123456789abcdefABCDEF' for c in raw_name)
-    clean_name = "Producto analizado por foto" if is_hash else raw_name.replace("_", " ").replace("-", " ").title()
+    is_clipboard = any(raw_name.lower().startswith(p) for p in ["captura_pegada", "portapapeles", "blob", "screenshot", "imagen", "image"])
+    clean_name = "Producto por identificar" if (is_hash or is_clipboard) else raw_name.replace("_", " ").replace("-", " ").title()
 
     client = get_gemini_client()
 
@@ -94,9 +100,8 @@ def analyze_product_image(image_path: str, original_filename: Optional[str] = No
         model_cascade = [
             "gemini-3.5-flash-lite",
             "gemini-3.1-flash-lite",
-            "gemini-3.6-flash",
-            "gemini-3.7-flash",
-            "gemini-3.8-flash"
+            "gemini-3.8-flash",
+            "gemini-2.5-flash"
         ]
 
         last_error = None
@@ -121,7 +126,23 @@ def analyze_product_image(image_path: str, original_filename: Optional[str] = No
             raise last_error or RuntimeError("No se obtuvo respuesta de modelos Gemini Vision.")
 
         response_text = response.text.strip()
-        data = json.loads(response_text)
+        # Limpieza defensiva de bloques markdown si el modelo los incluye
+        clean_json = re.sub(r'^```json\s*', '', response_text, flags=re.MULTILINE)
+        clean_json = re.sub(r'\s*```$', '', clean_json, flags=re.MULTILINE).strip()
+        if "```" in clean_json:
+            clean_json = clean_json.replace("```json", "").replace("```", "").strip()
+
+        data = json.loads(clean_json)
+        # Si el modelo devolvió una lista con corchetes [{...}], extraer el primer objeto
+        if isinstance(data, list):
+            if len(data) > 0 and isinstance(data[0], dict):
+                data = data[0]
+            else:
+                raise ValueError("Respuesta JSON inválida devuelta por Gemini Vision.")
+
+        if not isinstance(data, dict):
+            raise ValueError("La respuesta de Gemini Vision no contiene un objeto válido.")
+
         data["ai_status"] = "success"
         data["mensaje"] = "Producto identificado exitosamente con Gemini Vision."
         return data
