@@ -3085,10 +3085,19 @@ class SearchEngine:
                 local_path = UPLOADS_DIR / clean_img_name
                 if local_path.exists():
                     self._current_image_url = f"/uploads/{clean_img_name}"
-                    self._current_image_info = analyze_product_image(str(local_path))
-                    logger.info(f"Visual AI Context cargado: {self._current_image_info.get('producto_identificado')} - S/ {self._current_image_info.get('precio_referencia_sugerido')}")
+                    if not hasattr(self, "_vision_cache"):
+                        self._vision_cache = {}
+                    if clean_img_name in self._vision_cache:
+                        self._current_image_info = self._vision_cache[clean_img_name]
+                    else:
+                        self._current_image_info = analyze_product_image(str(local_path))
+                        if self._current_image_info:
+                            self._vision_cache[clean_img_name] = self._current_image_info
+
+                    logger.info(f"Visual AI Context cargado: {self._current_image_info.get('producto_identificado') if self._current_image_info else 'N/A'} - S/ {self._current_image_info.get('precio_referencia_sugerido') if self._current_image_info else 'N/A'}")
                     if not query_clean or len(query_clean) < 4:
-                        query_clean = self._current_image_info.get("producto_identificado", query_clean)
+                        if self._current_image_info:
+                            query_clean = self._current_image_info.get("producto_identificado", query_clean)
             except Exception as e_vis:
                 logger.debug(f"Error cargando contexto visual en search_core: {e_vis}")
 

@@ -1098,13 +1098,18 @@ document.addEventListener("DOMContentLoaded", () => {
     await performSearch();
   });
 
+  let currentSearchAbortController = null;
   let isSearching = false;
 
   async function performSearch() {
-    if (isSearching) {
-      console.warn("Búsqueda ya en curso. Omitiendo invocación concurrente.");
-      return;
+    // Si hay una búsqueda previa en curso, cancelarla para dar paso inmediato a la nueva búsqueda
+    if (currentSearchAbortController) {
+      try {
+        currentSearchAbortController.abort();
+      } catch (_) {}
+      currentSearchAbortController = null;
     }
+
     const query = DOM.searchQuery.value.trim();
     const selectedSites = state.selectedSites && state.selectedSites.length > 0
       ? [...state.selectedSites]
@@ -1115,7 +1120,34 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    // BORRADO INMEDIATO DE RESULTADOS ANTERIORES:
+    // Limpia la grilla de productos de la primera búsqueda para que la nueva avance de inmediato
+    state.searchResults = [];
+    if (DOM.resultsGrid) {
+      DOM.resultsGrid.innerHTML = "";
+    }
+    if (DOM.resultsCountText) {
+      DOM.resultsCountText.textContent = query
+        ? `Buscando oportunidades para "${query}"...`
+        : "Rastreando oportunidades en tiempo real...";
+    }
+    if (DOM.resultsEmptyState) {
+      DOM.resultsEmptyState.classList.add("hidden");
+    }
+    if (DOM.storeBlockedAlertBanner) {
+      DOM.storeBlockedAlertBanner.classList.add("hidden");
+    }
+    if (DOM.inventoryMatchAlert) {
+      DOM.inventoryMatchAlert.classList.add("hidden");
+    }
+    if (DOM.resultsTimeBadge) DOM.resultsTimeBadge.classList.add("hidden");
+    if (DOM.resultsCacheBadge) DOM.resultsCacheBadge.classList.add("hidden");
+    if (DOM.resultsBroadenedBadge) DOM.resultsBroadenedBadge.classList.add("hidden");
+
     isSearching = true;
+    currentSearchAbortController = new AbortController();
+    const signal = currentSearchAbortController.signal;
+
     const maxPrice = DOM.filterMaxPrice.value ? parseFloat(DOM.filterMaxPrice.value) : null;
     const minMargin = DOM.filterMinMargin.value ? parseFloat(DOM.filterMinMargin.value) : null;
     const commission = DOM.filterCommission && DOM.filterCommission.value ? parseFloat(DOM.filterCommission.value) : 12.0;
@@ -1129,12 +1161,20 @@ document.addEventListener("DOMContentLoaded", () => {
       loaderEl.classList.remove("hidden");
       loaderEl.style.removeProperty("display");
     }
-    DOM.resultsEmptyState.classList.add("hidden");
+
+    // Temporizador de protección de 40 segundos para que nunca quede bloqueado
+    const timeoutId = setTimeout(() => {
+      if (currentSearchAbortController && isSearching) {
+        currentSearchAbortController.abort();
+        showToast("La búsqueda tomó más tiempo del esperado. Puedes reintentar o ajustar las tiendas.", "warning");
+      }
+    }, 40000);
 
     try {
       const response = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: signal,
         body: JSON.stringify({
           query: query,
           target_sites: selectedSites,
@@ -1144,6 +1184,8 @@ document.addEventListener("DOMContentLoaded", () => {
           image_filename: state.uploadedSearchImage
         })
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         let errorMsg = `Error HTTP ${response.status}: ${response.statusText || 'Error en la búsqueda'}`;
@@ -1231,11 +1273,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
       sortAndRenderResults();
     } catch (error) {
+      clearTimeout(timeoutId);
+      if (error.name === "AbortError") {
+        console.info("Búsqueda anterior cancelada para dar paso inmediato a la nueva búsqueda.");
+        return;
+      }
       console.error("Error buscando mercaderías:", error);
       const detailMsg = error.message ? error.message : "Error de conexión o fallo interno del servidor";
       showToast(`Error al consultar portales de compra: ${detailMsg}`, "error");
+      if (state.searchResults.length === 0 && DOM.resultsEmptyState) {
+        DOM.resultsEmptyState.classList.remove("hidden");
+      }
     } finally {
       isSearching = false;
+      currentSearchAbortController = null;
       const loaderEl = DOM.searchLoadingIndicator || document.getElementById("searchLoadingIndicator");
       if (loaderEl) {
         loaderEl.classList.add("hidden");
