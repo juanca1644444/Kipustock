@@ -216,6 +216,71 @@ DEFAULT_SITES = [
     "Promart"
 ]
 
+# Tiendas que comercializan vehículos completos (automóviles, camionetas, motos)
+VEHICLE_ELIGIBLE_STORES = {"Facebook Marketplace", "Mercado Libre"}
+
+# Tiendas retail generalistas y de mejoramiento del hogar que NO venden automóviles completos
+NON_VEHICLE_STORES = {
+    "Falabella",
+    "Ripley",
+    "Sodimac",
+    "Temu",
+    "AliExpress",
+    "Web / Google Shopping",
+    "PlazaVea",
+    "Promart"
+}
+
+# Palabras clave de accesorios, repuestos, juguetes, limpieza y herramientas (que las tiendas retail SÍ pueden vender)
+NON_VEHICLE_KEYWORDS = {
+    "funda", "cobertor", "cubierta", "cubre", "protector", "bateria", "pila",
+    "llanta", "neumatico", "aro", "aros", "valvula", "radio", "parlante", "autoradio", "audio",
+    "alarma", "trabalenguas", "seguro", "gps", "rastreador", "aceite", "shampoo", "champu",
+    "cera", "silicona", "ambientador", "refrigerante", "aditivo", "grasa", "liquido",
+    "aspiradora", "soporte", "cargador", "cable", "adaptador", "inversor", "luces", "foco",
+    "faro", "led", "neblinero", "lampara", "ampolleta", "espejo", "retrovisor", "alfombra",
+    "pisos", "piso", "tapiz", "tapizado", "cojin", "adorno", "llavero", "emblema", "sticker",
+    "calcomania", "parasol", "juguete", "hot wheels", "escala", "rc", "control remoto",
+    "miniatura", "coleccion", "lego", "pista", "maqueta", "parabrisas", "plumilla",
+    "limpiaparabrisas", "escobilla", "sensor", "camara", "retroceso", "herramienta", "gata",
+    "llave", "compresor", "inflador", "pastilla", "freno", "amortiguador", "filtro", "bujia"
+}
+
+VEHICLE_PATTERNS = [
+    r'\b(auto|autos|automovil|automoviles|carro|carros|vehiculo|vehiculos|camioneta|camionetas|camion|camiones|suv|sedan|hatchback|pickup|pick-up)\b',
+    r'\b(seminuevo|seminuevos|seminueva|seminuevas)\b',
+    r'\b(toyota|hyundai|kia|nissan|chevrolet|suzuki|honda|mazda|volkswagen|ford|mitsubishi|subaru|renault|peugeot|bmw|mercedes|audi|jeep|chery|jac|changan|geely|byd|mg)\s+(yaris|corolla|hilux|rav4|elantra|accent|tucson|rio|picanto|sportage|cerato|versa|sentra|frontier|qashqai|sail|onix|tracker|swift|baleno|vitara|civic|cr-v|gol|polo|amarok|ranger)\b'
+]
+
+
+def is_full_vehicle_product(text: str, category: str = "", price: float = 0.0) -> bool:
+    """
+    Detecta si una búsqueda o producto corresponde a un automóvil o vehículo completo,
+    diferenciándolo de accesorios o repuestos (como fundas, aspiradoras o baterías).
+    """
+    if not text:
+        return False
+    import unicodedata
+    clean = unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('utf-8').lower().strip()
+    
+    # 1. Si contiene alguna palabra de accesorio, juguete, repuesto o limpieza, NO es un vehículo completo
+    for kw in NON_VEHICLE_KEYWORDS:
+        if re.search(r'\b' + re.escape(kw) + r'\b', clean):
+            return False
+            
+    # 2. Si coincide con patrones de vehículos o modelos automotrices
+    for pat in VEHICLE_PATTERNS:
+        if re.search(pat, clean):
+            return True
+            
+    # 3. Si el precio supera los S/ 3,500 y menciona marcas automotrices reconocidas
+    if price >= 3500:
+        car_brands = ["toyota", "nissan", "hyundai", "kia", "chevrolet", "suzuki", "mazda", "ford", "volkswagen", "honda"]
+        if any(b in clean for b in car_brands):
+            return True
+
+    return False
+
 # Placeholder SVG neutral genérico para productos sin imagen
 NEUTRAL_PLACEHOLDER_IMAGE = (
     "data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20"
@@ -508,6 +573,10 @@ class SearchEngine:
         if any(bw in low_nombre and len(nombre) < 28 for bw in bad_words):
             return None
 
+        # Descartar vehículos completos en tiendas retail generalistas que no comercializan automóviles
+        if tienda_nombre in NON_VEHICLE_STORES and is_full_vehicle_product(nombre):
+            return None
+
         # 2. Validar precio numérico
         try:
             precio = float(raw.get("precio_compra", 0))
@@ -747,6 +816,11 @@ class SearchEngine:
         img_info = getattr(self, "_current_image_info", None)
         img_url = getattr(self, "_current_image_url", None)
 
+        # Si la tienda no vende vehículos y la búsqueda es de un vehículo completo, no generar referencias
+        if store_name in NON_VEHICLE_STORES:
+            if is_full_vehicle_product(query) or (img_info and is_full_vehicle_product(str(img_info.get("producto_identificado", "")))):
+                return []
+
         # 1. Si hay una imagen analizada con producto y precio detectado, inyectar el producto exacto
         visual_title = ""
         if img_info and img_info.get("producto_identificado"):
@@ -755,18 +829,21 @@ class SearchEngine:
             if visual_price <= 0:
                 visual_price = 50.0
 
-            exact_item = self._validate_and_sanitize_item({
-                "nombre": visual_title,
-                "precio_compra": round(visual_price, 2),
-                "foto_url": img_url or "",
-                "url_compra": search_url,
-                "sitio": store_name,
-                "disponibilidad": f"En Catálogo {store_name}",
-                "calificacion": 4.8,
-                "envio": f"Envío {store_name}"
-            }, store_name, search_url)
-            if exact_item:
-                results.append(exact_item)
+            # Si es un vehículo completo, inyectar ÚNICAMENTE en tiendas vehiculares autorizadas (Facebook Marketplace, Mercado Libre)
+            is_veh = is_full_vehicle_product(visual_title, price=visual_price)
+            if not is_veh or store_name in VEHICLE_ELIGIBLE_STORES:
+                exact_item = self._validate_and_sanitize_item({
+                    "nombre": visual_title,
+                    "precio_compra": round(visual_price, 2),
+                    "foto_url": img_url or "",
+                    "url_compra": search_url,
+                    "sitio": store_name,
+                    "disponibilidad": f"En Catálogo {store_name}",
+                    "calificacion": 4.8,
+                    "envio": f"Envío {store_name}"
+                }, store_name, search_url)
+                if exact_item:
+                    results.append(exact_item)
 
         remaining_slots = max_items - len(results)
         if remaining_slots <= 0:
@@ -2077,6 +2154,19 @@ class SearchEngine:
         """Extractor independiente para PlazaVea Perú."""
         encoded_query = quote(query.strip())
         search_url = f"https://www.plazavea.com.pe/search/?_query={encoded_query}"
+
+        # Comprobar si la búsqueda o imagen es un vehículo completo
+        if is_full_vehicle_product(query) or (
+            getattr(self, "_current_image_info", None) and is_full_vehicle_product(str(self._current_image_info.get("producto_identificado", "")))
+        ):
+            return {
+                "tienda": "PlazaVea",
+                "items": [],
+                "status": "info",
+                "mensaje": "PlazaVea no comercializa automóviles ni vehículos completos.",
+                "search_url": search_url
+            }
+
         results = []
         status_code = "sin_resultados"
         mensaje = f"0 productos encontrados en catálogo de PlazaVea para '{query}'."
@@ -2200,6 +2290,19 @@ class SearchEngine:
         """Extractor independiente para Promart Perú."""
         encoded_query = quote(query.strip())
         search_url = f"https://www.promart.pe/search/?_query={encoded_query}"
+
+        # Comprobar si la búsqueda o imagen es un vehículo completo
+        if is_full_vehicle_product(query) or (
+            getattr(self, "_current_image_info", None) and is_full_vehicle_product(str(self._current_image_info.get("producto_identificado", "")))
+        ):
+            return {
+                "tienda": "Promart",
+                "items": [],
+                "status": "info",
+                "mensaje": "Promart no comercializa automóviles ni vehículos completos.",
+                "search_url": search_url
+            }
+
         results = []
         status_code = "sin_resultados"
         mensaje = f"0 productos encontrados en catálogo de Promart para '{query}'."
@@ -2730,6 +2833,19 @@ class SearchEngine:
         }
 
         async def _run_store_safe(site_name: str, fn, q: str) -> Dict[str, Any]:
+            # Descartar de inmediato tiendas retail que no comercializan automóviles
+            is_veh_query = is_full_vehicle_product(q) or (
+                self._current_image_info and is_full_vehicle_product(str(self._current_image_info.get("producto_identificado", "")))
+            )
+            if site_name in NON_VEHICLE_STORES and is_veh_query:
+                return {
+                    "tienda": site_name,
+                    "items": [],
+                    "status": "info",
+                    "mensaje": f"{site_name} no comercializa automóviles ni vehículos completos.",
+                    "search_url": f"https://www.{site_name.lower().replace(' ', '')}.com.pe"
+                }
+
             # Comprobar caché local (12 min TTL) de forma segura
             try:
                 cached = search_cache.get(site_name, q)
