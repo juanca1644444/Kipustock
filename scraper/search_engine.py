@@ -932,6 +932,16 @@ class SearchEngine:
             # En caso de no encontrar foto enciclopédica, usar placeholder neutral
             return NEUTRAL_PLACEHOLDER_IMAGE, None
 
+        # 2. Si el producto o búsqueda es un pasaje, vuelo, ticket aéreo o servicio de viaje
+        travel_keywords = ["pasaje", "pasajes", "vuelo", "vuelos", "ticket aereo", "boleto", "boletos", "aerolinea", "aerolínea", "jetsmart", "latam", "sky airline", "kayak"]
+        is_travel = any(kw in title.lower() or (root_query and kw in root_query.lower()) for kw in travel_keywords)
+        if is_travel:
+            current_img = getattr(self, "_current_image_url", None)
+            if current_img:
+                return current_img, None
+            # Imagen oficial neutral de aviación comercial (nunca buscar en tiendas de ropa femenina)
+            return "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=600&auto=format&fit=crop&q=80", None
+
         # Modificadores genéricos o ruidosos que desvían búsquedas en catálogos VTEX
         noise_modifiers = {
             "de", "para", "con", "sin", "en", "y", "el", "la", "un", "una", "del", "al", "los", "las",
@@ -978,6 +988,9 @@ class SearchEngine:
                             # Descartar cobertores/fundas si el producto buscado no es un cobertor
                             is_acc_search = any(kw in clean_root for kw in ["funda", "cobertor", "cubierta", "cubre"])
                             if not is_acc_search and any(kw in p_name_low for kw in ["cobertor", "funda para auto", "cubierta auto"]):
+                                continue
+                            # Descartar prendas de vestir si la palabra buscada es 'vuelo' (en moda 'vuelos' significa volantes/pliegues)
+                            if any(w in phrase.lower() for w in ["vuelo", "pasaje", "aereo"]) and any(cl in p_name_low for cl in ["vestido", "falda", "blusa", "pantalon", "short", "polo", "ropa"]):
                                 continue
                             # Validación estricta: el producto debe contener la raíz del sustantivo
                             if primary_noun in p_name_low or noun_stem in p_name_low:
@@ -2711,6 +2724,20 @@ class SearchEngine:
 
     async def _scrape_custom_store(self, store: TiendaPersonalizada, query: str, max_items: int = 4) -> Dict[str, Any]:
         """Extractor modular para tiendas y proveedores web personalizados ingresados por el usuario."""
+        # Detección de portales de vuelos y turismo (no son tiendas de mercadería física)
+        is_travel_portal = any(t in (store.nombre + " " + (store.url_web or "")).lower() for t in ["kayak", "despegar", "skyscanner", "booking", "expedia", "trivago"])
+        if is_travel_portal:
+            return {
+                "tienda": store.nombre,
+                "items": [],
+                "status": "info",
+                "mensaje": f"{store.nombre} es un metabuscador de vuelos/hoteles. Requiere fechas y aeropuertos directamente en su portal.",
+                "search_url": store.url_web or "https://www.kayak.com.pe",
+                "is_custom": True,
+                "url_web": store.url_web,
+                "contacto_whatsapp": store.contacto_whatsapp
+            }
+
         encoded_query = quote_plus(query.strip())
         
         # Calcular URL de búsqueda
