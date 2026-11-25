@@ -731,6 +731,30 @@ class SearchEngine:
             logger.debug(f"Error parseando __NEXT_DATA__ para {site_name}: {e}")
         return items
 
+    @staticmethod
+    def _get_vtex_query_candidates(query: str) -> List[str]:
+        """Genera candidatos de búsqueda progresivos para APIs VTEX de tiendas peruanas (PlazaVea, Promart, Oechsle)."""
+        raw = query.strip()
+        cands = [raw]
+        noise = {
+            "de", "para", "con", "sin", "en", "y", "el", "la", "un", "una", "del", "al", "los", "las",
+            "su", "sus", "por", "sobre", "mas", "alta", "doble", "uso", "accesorios", "coche", "set", "pack",
+            "mini", "super", "nuevo", "nueva", "combo", "kit", "calidad", "tipo", "portatil", "portátil",
+            "ruedas", "entrenamiento", "pulgadas"
+        }
+        words = [w for w in re.findall(r'\b[a-zA-ZáéíóúñÁÉÍÓÚÑ0-9]+\b', raw) if w.lower() not in noise]
+        if len(words) >= 2:
+            cands.append(" ".join(words[:4]))
+            cands.append(" ".join(words[:2]))
+        elif words:
+            cands.append(words[0])
+        res = []
+        for c in cands:
+            c_str = c.strip()
+            if c_str and c_str.lower() not in [x.lower() for x in res]:
+                res.append(c_str)
+        return res
+
     def _extract_vtex_products(
         self,
         vtex_json: list,
@@ -821,29 +845,28 @@ class SearchEngine:
             logger.debug(f"Error obteniendo pool de fotos para {car_model_name}: {e}")
             return []
 
-    async def _find_real_product_image(
+    async def _find_real_product_catalog_match(
         self,
         title: str,
         root_query: str = "",
         client: Optional[httpx.AsyncClient] = None,
         item_index: int = 0,
         used_images: Optional[set] = None
-    ) -> str:
+    ) -> Tuple[str, Optional[Dict[str, Any]]]:
         """
-        Localiza una fotografía real verificada para el producto en catálogos abiertos peruanos (Oechsle y PlazaVea)
-        o bases enciclopédicas oficiales para vehículos.
-        Garantiza concordancia cronológica (año) y de carrocería (sedán/hatchback), evitando discrepancias de época.
-        NUNCA asigna fotos de cobertores, fundas o repuestos a vehículos completos.
+        Localiza una fotografía real verificada y la información comercial real (nombre, precio, link)
+        en catálogos abiertos peruanos (PlazaVea, Oechsle) o bases enciclopédicas para vehículos.
+        Garantiza sincronización exacta entre la fotografía mostrada y el precio real en soles.
         """
         if not title:
-            return ""
+            return "", None
 
         # 1. Si el producto buscado es un vehículo completo (automóvil, camioneta, moto)
         if is_full_vehicle_product(title):
             # Prioridad A: Si el usuario subió una fotografía de este vehículo y es la primera tarjeta
             current_img = getattr(self, "_current_image_url", None)
             if current_img and item_index == 0:
-                return current_img
+                return current_img, None
 
             # Prioridad B: Obtener pool de fotografías automotrices reales y ordenar por año y carrocería
             m = re.search(r'\b(toyota|hyundai|kia|nissan|chevrolet|suzuki|honda|mazda|volkswagen|ford|mitsubishi|subaru|renault|peugeot|bmw|mercedes|audi|jeep|chery|jac|changan|geely|byd|mg)\s+([a-zA-Z0-9]+)\b', title, re.IGNORECASE)
@@ -898,10 +921,10 @@ class SearchEngine:
                                 break
                     if not selected_photo:
                         selected_photo = ranked_pool[item_index % len(ranked_pool)][0]
-                    return selected_photo
+                    return selected_photo, None
 
-            # En caso de no encontrar foto enciclopédica, usar placeholder neutral (JAMÁS una funda o cobertor)
-            return NEUTRAL_PLACEHOLDER_IMAGE
+            # En caso de no encontrar foto enciclopédica, usar placeholder neutral
+            return NEUTRAL_PLACEHOLDER_IMAGE, None
 
         # Modificadores genéricos o ruidosos que desvían búsquedas en catálogos VTEX
         noise_modifiers = {
@@ -909,7 +932,7 @@ class SearchEngine:
             "su", "sus", "por", "sobre", "mas", "alta", "doble", "uso", "accesorios", "coche", "set", "pack",
             "mini", "super", "nuevo", "nueva", "combo", "kit", "calidad", "tipo", "portatil", "portátil",
             "inalambrico", "inalámbrico", "recargable", "usb", "electrico", "eléctrico", "potente", "profesional",
-            "teclado", "limpieza"
+            "teclado", "limpieza", "ruedas", "entrenamiento"
         }
 
         # Extraer sustantivo principal (priorizando el término de búsqueda original del usuario si existe)
@@ -921,7 +944,7 @@ class SearchEngine:
 
         primary_noun = root_tokens[0] if root_tokens else (substantive_words[0] if substantive_words else (all_title_words[0] if all_title_words else ""))
         if not primary_noun or len(primary_noun) < 3:
-            return ""
+            return "", None
 
         noun_stem = primary_noun.rstrip("s")
 
@@ -936,7 +959,7 @@ class SearchEngine:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         }
 
-        async def _query_catalog(c: httpx.AsyncClient, base_domain: str, phrase: str) -> str:
+        async def _query_catalog(c: httpx.AsyncClient, base_domain: str, phrase: str) -> Tuple[str, Optional[Dict[str, Any]]]:
             try:
                 u = f"{base_domain}/api/catalog_system/pub/products/search?ft={quote(phrase)}"
                 resp = await c.get(u, timeout=2.5)
@@ -944,31 +967,51 @@ class SearchEngine:
                     data = resp.json()
                     if isinstance(data, list):
                         for p in data[:8]:
-                            p_name = (p.get("productName") or "").lower()
+                            p_name = p.get("productName") or p.get("productTitle") or ""
+                            p_name_low = p_name.lower()
                             # Descartar cobertores/fundas si el producto buscado no es un cobertor
                             is_acc_search = any(kw in clean_root for kw in ["funda", "cobertor", "cubierta", "cubre"])
-                            if not is_acc_search and any(kw in p_name for kw in ["cobertor", "funda para auto", "cubierta auto"]):
+                            if not is_acc_search and any(kw in p_name_low for kw in ["cobertor", "funda para auto", "cubierta auto"]):
                                 continue
                             # Validación estricta: el producto debe contener la raíz del sustantivo
-                            if primary_noun in p_name or noun_stem in p_name:
+                            if primary_noun in p_name_low or noun_stem in p_name_low:
                                 items_list = p.get("items", [])
-                                if items_list and items_list[0].get("images"):
-                                    img_url = items_list[0]["images"][0].get("imageUrl", "")
+                                if items_list:
+                                    first_item = items_list[0]
+                                    img_url = ""
+                                    if first_item.get("images"):
+                                        img_url = first_item["images"][0].get("imageUrl", "")
+                                    real_price = 0.0
+                                    sellers = first_item.get("sellers", [])
+                                    if sellers:
+                                        comm = sellers[0].get("commertialOffer", {})
+                                        try:
+                                            real_price = float(comm.get("Price", 0.0) or 0.0)
+                                        except (ValueError, TypeError):
+                                            real_price = 0.0
+                                    real_link = p.get("link") or ""
+                                    store_id = "PlazaVea" if "plazavea" in base_domain else "Oechsle"
                                     if img_url and img_url.startswith("http"):
-                                        return img_url
+                                        meta = {
+                                            "nombre": p_name,
+                                            "precio_compra": real_price,
+                                            "url_compra": real_link,
+                                            "tienda": store_id
+                                        }
+                                        return img_url, meta
             except Exception:
                 pass
-            return ""
+            return "", None
 
         domains = ["https://www.oechsle.pe", "https://www.plazavea.com.pe"]
 
-        async def _execute_search(c: httpx.AsyncClient) -> str:
+        async def _execute_search(c: httpx.AsyncClient) -> Tuple[str, Optional[Dict[str, Any]]]:
             for phrase in search_candidates:
                 for dom in domains:
-                    found_img = await _query_catalog(c, dom, phrase)
+                    found_img, meta = await _query_catalog(c, dom, phrase)
                     if found_img:
-                        return found_img
-            return ""
+                        return found_img, meta
+            return "", None
 
         if client:
             return await _execute_search(client)
@@ -977,7 +1020,25 @@ class SearchEngine:
                 async with httpx.AsyncClient(headers=headers, timeout=3.0, follow_redirects=True) as local_c:
                     return await _execute_search(local_c)
             except Exception:
-                return ""
+                return "", None
+
+    async def _find_real_product_image(
+        self,
+        title: str,
+        root_query: str = "",
+        client: Optional[httpx.AsyncClient] = None,
+        item_index: int = 0,
+        used_images: Optional[set] = None
+    ) -> str:
+        """Compatibilidad retroactiva: localiza únicamente la URL de la imagen."""
+        img, _ = await self._find_real_product_catalog_match(
+            title=title,
+            root_query=root_query,
+            client=client,
+            item_index=item_index,
+            used_images=used_images
+        )
+        return img
 
     async def _get_gemini_store_reference(
         self,
@@ -1076,9 +1137,9 @@ class SearchEngine:
                 }
                 async with httpx.AsyncClient(headers=img_headers, timeout=4.0, follow_redirects=True) as shared_img_client:
                     used_images = set()
-                    images = []
+                    images_and_meta = []
                     for i, t in enumerate(titles_and_prices):
-                        img_found = await self._find_real_product_image(
+                        img_found, meta = await self._find_real_product_catalog_match(
                             t[0],
                             root_query=query,
                             client=shared_img_client,
@@ -1087,20 +1148,40 @@ class SearchEngine:
                         )
                         if img_found and img_found.startswith("http"):
                             used_images.add(img_found)
-                        images.append(img_found)
+                        images_and_meta.append((img_found, meta))
 
-                for (title, p_val), img in zip(titles_and_prices, images):
+                for (title, p_val), (img, meta) in zip(titles_and_prices, images_and_meta):
                     img_src = img if (isinstance(img, str) and img.startswith("http")) else ""
+                    
+                    # Sincronización estricta: si la fotografía proviene de un producto real del catálogo (PlazaVea u Oechsle),
+                    # y la tienda coincide, sincronizar el precio real y nombre auténtico de esa foto para evitar discrepancias.
+                    final_title = title
+                    final_price = p_val
+                    final_url = search_url
+
+                    if meta and meta.get("precio_compra", 0) > 0:
+                        matched_store = meta.get("tienda", "")
+                        is_same_store = (
+                            (matched_store and matched_store.lower() in store_name.lower()) or
+                            (store_name.lower() in matched_store.lower()) or
+                            ("web" in store_name.lower())
+                        )
+                        if is_same_store:
+                            final_title = meta.get("nombre") or final_title
+                            final_price = float(meta.get("precio_compra") or final_price)
+                            if meta.get("url_compra"):
+                                final_url = meta.get("url_compra")
+
                     val = self._validate_and_sanitize_item({
-                        "nombre": title,
-                        "precio_compra": p_val,
+                        "nombre": final_title,
+                        "precio_compra": final_price,
                         "foto_url": img_src,
-                        "url_compra": search_url,
+                        "url_compra": final_url,
                         "sitio": store_name,
                         "disponibilidad": f"En Catálogo {store_name}",
                         "calificacion": 4.6,
                         "envio": "Despacho a Domicilio"
-                    }, store_name, search_url)
+                    }, store_name, final_url)
                     if val:
                         results.append(val)
             return results
@@ -2228,27 +2309,29 @@ class SearchEngine:
 
         # 1. Consulta HTTP ultraligera a la red de catálogos comerciales web de Perú (Oechsle / VTEX)
         try:
-            oechsle_url = f"https://www.oechsle.pe/api/catalog_system/pub/products/search?ft={encoded_query}"
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             }
+            cands = self._get_vtex_query_candidates(query)
             async with httpx.AsyncClient(headers=headers, timeout=8.0, follow_redirects=True) as client:
-                resp = await client.get(oechsle_url)
-                if resp.status_code in [200, 206]:
-                    raw_items = self._extract_vtex_products(resp.json(), "Web / Google Shopping", search_url, max_items)
-                    for it in raw_items:
-                        it["sitio"] = "Web / Google Shopping"
-                        val = self._validate_and_sanitize_item(it, "Web / Google Shopping", search_url)
-                        if val:
-                            results.append(val)
-                    if results:
-                        return {
-                            "tienda": "Web / Google Shopping",
-                            "items": results,
-                            "status": "ok",
-                            "mensaje": f"{len(results)} ofertas reales encontradas en tiendas web de Perú.",
-                            "search_url": search_url
-                        }
+                for q_cand in cands:
+                    oechsle_url = f"https://www.oechsle.pe/api/catalog_system/pub/products/search?ft={quote(q_cand)}"
+                    resp = await client.get(oechsle_url)
+                    if resp.status_code in [200, 206]:
+                        raw_items = self._extract_vtex_products(resp.json(), "Web / Google Shopping", search_url, max_items)
+                        for it in raw_items:
+                            it["sitio"] = "Web / Google Shopping"
+                            val = self._validate_and_sanitize_item(it, "Web / Google Shopping", search_url)
+                            if val:
+                                results.append(val)
+                        if results:
+                            return {
+                                "tienda": "Web / Google Shopping",
+                                "items": results,
+                                "status": "ok",
+                                "mensaje": f"{len(results)} ofertas reales encontradas en tiendas web de Perú.",
+                                "search_url": search_url
+                            }
         except Exception as e_oe:
             logger.debug(f"HTTP Web Shopping fallback: {e_oe}")
 
@@ -2361,28 +2444,30 @@ class SearchEngine:
         status_code = "sin_resultados"
         mensaje = f"0 productos encontrados en catálogo de PlazaVea para '{query}'."
 
-        # 1. Consulta HTTP ultraligera a la API pública de catálogo VTEX
+        # 1. Consulta HTTP ultraligera a la API pública de catálogo VTEX con consultas progresivas
         try:
-            vtex_url = f"https://www.plazavea.com.pe/api/catalog_system/pub/products/search?ft={encoded_query}"
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             }
+            cands = self._get_vtex_query_candidates(query)
             async with httpx.AsyncClient(headers=headers, timeout=8.0, follow_redirects=True) as client:
-                resp = await client.get(vtex_url)
-                if resp.status_code in [200, 206]:
-                    raw_items = self._extract_vtex_products(resp.json(), "PlazaVea", search_url, max_items)
-                    for it in raw_items:
-                        val = self._validate_and_sanitize_item(it, "PlazaVea", search_url)
-                        if val:
-                            results.append(val)
-                    if results:
-                        return {
-                            "tienda": "PlazaVea",
-                            "items": results,
-                            "status": "ok",
-                            "mensaje": f"{len(results)} productos reales encontrados en PlazaVea.",
-                            "search_url": search_url
-                        }
+                for q_cand in cands:
+                    vtex_url = f"https://www.plazavea.com.pe/api/catalog_system/pub/products/search?ft={quote(q_cand)}"
+                    resp = await client.get(vtex_url)
+                    if resp.status_code in [200, 206]:
+                        raw_items = self._extract_vtex_products(resp.json(), "PlazaVea", search_url, max_items)
+                        for it in raw_items:
+                            val = self._validate_and_sanitize_item(it, "PlazaVea", search_url)
+                            if val:
+                                results.append(val)
+                        if results:
+                            return {
+                                "tienda": "PlazaVea",
+                                "items": results,
+                                "status": "ok",
+                                "mensaje": f"{len(results)} productos reales encontrados en PlazaVea.",
+                                "search_url": search_url
+                            }
         except Exception as e_vtex:
             logger.debug(f"HTTP VTEX PlazaVea: {e_vtex}")
 
@@ -2497,28 +2582,30 @@ class SearchEngine:
         status_code = "sin_resultados"
         mensaje = f"0 productos encontrados en catálogo de Promart para '{query}'."
 
-        # 1. Consulta HTTP ultraligera a la API pública de catálogo VTEX
+        # 1. Consulta HTTP ultraligera a la API pública de catálogo VTEX con consultas progresivas
         try:
-            vtex_url = f"https://www.promart.pe/api/catalog_system/pub/products/search?ft={encoded_query}"
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             }
+            cands = self._get_vtex_query_candidates(query)
             async with httpx.AsyncClient(headers=headers, timeout=8.0, follow_redirects=True) as client:
-                resp = await client.get(vtex_url)
-                if resp.status_code in [200, 206]:
-                    raw_items = self._extract_vtex_products(resp.json(), "Promart", search_url, max_items)
-                    for it in raw_items:
-                        val = self._validate_and_sanitize_item(it, "Promart", search_url)
-                        if val:
-                            results.append(val)
-                    if results:
-                        return {
-                            "tienda": "Promart",
-                            "items": results,
-                            "status": "ok",
-                            "mensaje": f"{len(results)} productos reales encontrados en Promart.",
-                            "search_url": search_url
-                        }
+                for q_cand in cands:
+                    vtex_url = f"https://www.promart.pe/api/catalog_system/pub/products/search?ft={quote(q_cand)}"
+                    resp = await client.get(vtex_url)
+                    if resp.status_code in [200, 206]:
+                        raw_items = self._extract_vtex_products(resp.json(), "Promart", search_url, max_items)
+                        for it in raw_items:
+                            val = self._validate_and_sanitize_item(it, "Promart", search_url)
+                            if val:
+                                results.append(val)
+                        if results:
+                            return {
+                                "tienda": "Promart",
+                                "items": results,
+                                "status": "ok",
+                                "mensaje": f"{len(results)} productos reales encontrados en Promart.",
+                                "search_url": search_url
+                            }
         except Exception as e_vtex:
             logger.debug(f"HTTP VTEX Promart: {e_vtex}")
 
