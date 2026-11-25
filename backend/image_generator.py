@@ -68,67 +68,160 @@ def get_genai_client():
         return None
 
 
-def _fetch_catalog_product_photo(nombre: str, descripcion: str, estilo: str, target_path: Path) -> bool:
+STOCK_WATERMARK_DOMAINS = {
+    "alamy", "shutterstock", "gettyimages", "istockphoto", "dreamstime",
+    "123rf", "depositphotos", "stock.adobe", "vectorstock", "freepik",
+    "bigstock", "fonelab", "windowsforum", "carlosvassan", "madreshoy"
+}
+
+
+def _validate_image_with_vision(img_bytes: bytes, product_name: str, client=None) -> bool:
+    """Valida con Gemini Vision si la imagen candidata realmente muestra el producto."""
+    if not client:
+        client = get_genai_client()
+    if not client:
+        return True
+
+    clean_prod = re.sub(r'\[.*?\]', '', product_name).strip()
+    clean_prod = re.sub(r'["\'\(\)\{\}\<\>]', '', clean_prod)
+    prompt = (
+        f"Responde estrictamente 'SI' o 'NO': "
+        f"¿Esta imagen muestra el producto '{clean_prod}' o un artículo directamente de esa categoría comercial? "
+        "Si la imagen muestra un robot, un meme, un mapa, un dibujo animado, un automóvil o un objeto completamente distinto, responde 'NO'."
+    )
+    for model_name in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"]:
+        try:
+            from google.genai import types
+            resp = client.models.generate_content(
+                model=model_name,
+                contents=[
+                    types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+                    prompt
+                ]
+            )
+            text_resp = (resp.text or "").strip().upper()
+            if "SI" in text_resp:
+                return True
+            if "NO" in text_resp:
+                return False
+        except Exception as e:
+            logger.debug(f"Modelo {model_name} fallo en validacion visual: {e}")
+            continue
+    return True
+
+
+def _fetch_catalog_product_photo(
+    nombre: str,
+    descripcion: str,
+    estilo: str,
+    target_path: Path,
+    client=None
+) -> bool:
     """
     Localiza y descarga una fotografía fotorrealista de catálogo web en alta resolución
-    para el producto solicitado, asegurando fondo blanco de estudio y acabado profesional.
+    para el producto solicitado, validando con Gemini Vision para evitar fotos erróneas.
     """
     clean_name = re.sub(r'\[.*?\]', '', nombre).strip()
     clean_name = re.sub(r'["\'\(\)\{\}\<\>]', '', clean_name)
-    
-    # Términos adicionales según el estilo solicitado
-    if estilo == "estudio":
-        queries = [
-            f"{clean_name} producto fondo blanco catalogo",
-            f"{clean_name} foto oficial catalogo ecommerce",
-            f"{clean_name} producto oficial fondo blanco"
-        ]
-    elif estilo == "lifestyle":
-        queries = [
-            f"{clean_name} lifestyle fotografia producto en uso",
-            f"{clean_name} uso cotidiano producto ambiente",
-            f"{clean_name} fotografia producto oficial"
-        ]
-    else:  # marketing
-        queries = [
-            f"{clean_name} publicidad producto oficial promocional",
-            f"{clean_name} anuncio producto oficial",
-            f"{clean_name} producto fondo blanco catalogo"
-        ]
+
+    noise = {
+        "de", "para", "con", "sin", "en", "y", "el", "la", "un", "una", "del", "al", "los", "las",
+        "su", "sus", "por", "sobre", "mas", "alta", "nuevo", "nueva", "producto", "fondo", "blanco",
+        "catalogo", "foto", "oficial", "ecommerce", "calidad", "tipo", "uso"
+    }
+    words = [w for w in re.findall(r'\b[a-zA-ZáéíóúñÁÉÍÓÚÑ0-9]+\b', clean_name) if w.lower() not in noise]
+
+    # Generar candidatos de búsqueda concisos
+    search_terms = []
+    if len(words) >= 3:
+        search_terms.append(" ".join(words[:3]))
+        search_terms.append(f"{words[0]} {words[1]}")
+    elif len(words) == 2:
+        search_terms.append(f"{words[0]} {words[1]}")
+    elif words:
+        search_terms.append(words[0])
+    if words and len(words) > 1:
+        search_terms.append(words[0])
+
+    search_terms = list(dict.fromkeys(search_terms))
 
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     }
 
-    for query in queries:
+    # 1. Prioridad: Catálogos oficiales abiertos de comercio electrónico (Oechsle, PlazaVea)
+    primary_root = words[0].lower().rstrip("s") if words else ""
+    store_domains = ["https://www.oechsle.pe", "https://www.plazavea.com.pe"]
+    for store in store_domains:
+        for term in search_terms[:2]:
+            try:
+                vtex_url = f"{store}/api/catalog_system/pub/products/search?ft={requests.utils.quote(term)}"
+                r = requests.get(vtex_url, headers=headers, timeout=2.5)
+                if r.status_code in [200, 206]:
+                    data = r.json()
+                    if isinstance(data, list):
+                        for p in data[:4]:
+                            p_name = (p.get("productName") or p.get("productTitle") or "").lower()
+                            # El producto de tienda debe pertenecer a la categoría del artículo (ej. 'gorra')
+                            if primary_root and primary_root not in p_name:
+                                continue
+                            items = p.get("items", [])
+                            if items and items[0].get("images"):
+                                img_url = items[0]["images"][0].get("imageUrl", "")
+                                if img_url and img_url.startswith("http"):
+                                    res = requests.get(img_url, headers=headers, timeout=3.5)
+                                    if res.status_code == 200 and len(res.content) > 8000:
+                                        im = Image.open(io.BytesIO(res.content))
+                                        if im.width >= 240 and im.height >= 240:
+                                            if im.mode != "RGB":
+                                                im = im.convert("RGB")
+                                            im.save(str(target_path), format="PNG", optimize=True)
+                                            logger.info(f"Foto oficial de catálogo obtenida desde {store} para '{nombre}'")
+                                            return True
+            except Exception as e_vtex:
+                logger.debug(f"Error consultando catalogo {store}: {e_vtex}")
+                continue
+
+    # 2. Búsqueda web abierta limpia (con filtro estricto anti-stock y validación Gemini Vision)
+    if search_terms:
+        query = f"{search_terms[0]} producto fondo blanco"
         try:
-            logger.info(f"Buscando foto de catálogo comercial para: '{query}'")
             r = requests.get(
                 'https://www.bing.com/images/search',
                 params={'q': query, 'form': 'HDRSC2'},
                 headers=headers,
-                timeout=10
+                timeout=5
             )
-            if r.status_code != 200:
-                continue
-
-            murls = re.findall(r'murl&quot;:&quot;(http[^&]+)&quot;', r.text)
-            for img_url in murls[:10]:
-                try:
-                    res = requests.get(img_url, headers=headers, timeout=7)
-                    if res.status_code == 200 and len(res.content) > 10000:
-                        im = Image.open(io.BytesIO(res.content))
-                        if im.width >= 280 and im.height >= 280:
-                            if im.mode != "RGB":
-                                im = im.convert("RGB")
-                            im.save(str(target_path), format="PNG", optimize=True)
-                            logger.info(f"Foto de catálogo obtenida exitosamente ({im.size}) desde {img_url[:60]}")
-                            return True
-                except Exception as e_candidate:
-                    continue
-        except Exception as e_q:
-            logger.warning(f"Error buscando en query '{query}': {e_q}")
-            continue
+            if r.status_code == 200:
+                murls = re.findall(r'murl&quot;:&quot;(http[^&]+)&quot;', r.text)
+                checked = 0
+                for img_url in murls[:8]:
+                    if checked >= 2:
+                        break
+                    # Descartar bancos de imágenes con marcas de agua o dominios de stock ruidosos
+                    if any(bad in img_url.lower() for bad in STOCK_WATERMARK_DOMAINS):
+                        continue
+                    try:
+                        res = requests.get(img_url, headers=headers, timeout=3.5)
+                        if res.status_code == 200 and len(res.content) > 10000:
+                            im = Image.open(io.BytesIO(res.content))
+                            if im.width >= 280 and im.height >= 280:
+                                checked += 1
+                                # Generar thumbnail liviano para verificación visual inmediata con Gemini
+                                thumb_buf = io.BytesIO()
+                                im.resize((256, 256)).save(thumb_buf, format="JPEG", quality=75)
+                                if _validate_image_with_vision(thumb_buf.getvalue(), nombre, client=client):
+                                    if im.mode != "RGB":
+                                        im = im.convert("RGB")
+                                    im.save(str(target_path), format="PNG", optimize=True)
+                                    logger.info(f"Foto validada con Gemini Vision desde {img_url[:60]}")
+                                    return True
+                                else:
+                                    logger.info(f"Imagen descartada por Gemini Vision (no coincide con '{nombre}'): {img_url[:60]}")
+                    except Exception:
+                        continue
+        except Exception:
+            pass
 
     return False
 
@@ -220,7 +313,8 @@ def generate_product_image(
         nombre=nombre_producto,
         descripcion=desc_text,
         estilo=estilo_normalizado,
-        target_path=target_path
+        target_path=target_path,
+        client=client
     )
 
     if photo_ok and target_path.exists():
