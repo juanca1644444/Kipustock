@@ -466,12 +466,10 @@ async def analyze_and_filter_batch_with_gemini(
         def _call_gemini():
             last_err = None
             for model_name in [
-                "gemini-3.1-flash-lite",
                 "gemini-3.5-flash-lite",
-                "gemini-3.6-flash",
-                "gemini-3.7-flash",
                 "gemini-3.8-flash",
-                "gemini-2.0-flash"
+                "gemini-3.6-flash",
+                "gemini-3.7-flash"
             ]:
                 try:
                     return client.models.generate_content(
@@ -484,11 +482,15 @@ async def analyze_and_filter_batch_with_gemini(
                     )
                 except Exception as ex_m:
                     last_err = ex_m
-                    logger.warning(f"Intento batch con {model_name}: {ex_m}")
+                    logger.debug(f"Intento batch con {model_name}: {ex_m}")
             raise last_err or RuntimeError("No se pudo contactar con Gemini.")
 
-        resp = await loop.run_in_executor(None, _call_gemini)
-        data = json.loads(resp.text.strip())
+        try:
+            resp = await asyncio.wait_for(loop.run_in_executor(None, _call_gemini), timeout=12.0)
+            data = json.loads(resp.text.strip())
+        except Exception as e_timeout:
+            logger.info(f"Gemini excedió tiempo límite o cuota, aplicando cálculo financiero local: {e_timeout}")
+            return fallback_batch_analysis(raw_items, commission_percent, reason="Cálculo financiero local (tiempo de respuesta optimizado)")
         ai_map = {item["id"]: item for item in data if "id" in item}
 
         processed_items = []
@@ -520,9 +522,9 @@ async def analyze_and_filter_batch_with_gemini(
             item_copy["nota_ia"] = ai_info.get("motivo", "Validado con Gemini")
             processed_items.append(item_copy)
 
-        # Si el filtrado estricto dejó vacía la lista por exceso de celo, preservar ítems originales
+        # Si el filtrado estricto dejó vacía la lista por exceso de celo, preservar ítems originales calculando su rentabilidad completa
         if not processed_items and raw_items:
-            processed_items = [dict(it) for it in raw_items]
+            return fallback_batch_analysis(raw_items, commission_percent, reason="Mostrando productos afines disponibles en tienda.")
 
         return {
             "ai_status": "success",
@@ -3249,12 +3251,20 @@ class SearchEngine:
             elif isinstance(resp, Exception):
                 logger.error(f"Falla crítica en extractor de tienda: {resp}")
 
-        # 2. Reintento Inteligente con consulta base más amplia si la consulta exacta devolvió 0 resultados
+        # 2. Reintento Inteligente con consulta base más amplia si la consulta exacta devolvió 0 resultados o solo ítems sin afinidad
         broader_query = extract_broader_query(query_clean)
         used_broader = False
 
-        if not raw_items and broader_query:
-            logger.info(f"[SEARCH_BROADEN] 0 resultados para '{query_clean}'. Reintentando con consulta base: '{broader_query}'")
+        # Comprobar si los resultados obtenidos contienen al menos un ítem afín al término principal (ej. 'boina', 'sombrero', 'taladro')
+        primary_word = (query_clean.split()[0] if query_clean else "").lower().strip()
+        primary_stem = primary_word[:-1] if primary_word.endswith("s") and len(primary_word) > 3 else primary_word
+        has_primary_affinity = (
+            any(primary_stem in (it.get("nombre", "") + " " + it.get("categoria", "")).lower() for it in raw_items)
+            if primary_stem and len(primary_stem) >= 3 and raw_items else True
+        )
+
+        if (not raw_items or not has_primary_affinity) and broader_query and broader_query.lower() != query_clean.lower():
+            logger.info(f"[SEARCH_BROADEN] Consulta muy específica o sin productos afines para '{query_clean}'. Ampliando automáticamente a: '{broader_query}'")
             retry_tasks = []
             for site_name in target_sites:
                 extractor_fn = extractor_map.get(site_name)
