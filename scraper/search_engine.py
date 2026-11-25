@@ -17,7 +17,7 @@ import sys
 import threading
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from urllib.parse import quote_plus, quote
 import httpx
 from bs4 import BeautifulSoup
@@ -777,8 +777,8 @@ class SearchEngine:
             logger.debug(f"Error parseando VTEX para {site_name}: {e}")
         return items
 
-    async def _get_vehicle_photos_pool(self, car_model_name: str, client: Optional[httpx.AsyncClient] = None) -> List[str]:
-        """Obtiene un conjunto de fotografías reales de diferentes ángulos, años y versiones para un modelo de vehículo."""
+    async def _get_vehicle_photos_pool(self, car_model_name: str, client: Optional[httpx.AsyncClient] = None) -> List[Tuple[str, str]]:
+        """Obtiene un conjunto de fotografías reales con sus nombres de archivo (años, versiones y carrocería) para un modelo de vehículo."""
         if not car_model_name:
             return []
         u = f"https://es.wikipedia.org/w/api.php?action=query&titles={quote(car_model_name)}&prop=images&format=json"
@@ -812,9 +812,10 @@ class SearchEngine:
                 return []
             photos = []
             for pid, p in r2.json().get("query", {}).get("pages", {}).items():
+                title_file = p.get("title", "")
                 thumb = p.get("imageinfo", [{}])[0].get("thumburl")
                 if thumb and thumb.startswith("http"):
-                    photos.append(thumb)
+                    photos.append((thumb, title_file))
             return photos
         except Exception as e:
             logger.debug(f"Error obteniendo pool de fotos para {car_model_name}: {e}")
@@ -831,7 +832,7 @@ class SearchEngine:
         """
         Localiza una fotografía real verificada para el producto en catálogos abiertos peruanos (Oechsle y PlazaVea)
         o bases enciclopédicas oficiales para vehículos.
-        Garantiza que cada tarjeta reciba una fotografía DISTINTA y única, evitando duplicaciones.
+        Garantiza concordancia cronológica (año) y de carrocería (sedán/hatchback), evitando discrepancias de época.
         NUNCA asigna fotos de cobertores, fundas o repuestos a vehículos completos.
         """
         if not title:
@@ -844,21 +845,59 @@ class SearchEngine:
             if current_img and item_index == 0:
                 return current_img
 
-            # Prioridad B: Obtener pool de fotografías automotrices reales y distintas
+            # Prioridad B: Obtener pool de fotografías automotrices reales y ordenar por año y carrocería
             m = re.search(r'\b(toyota|hyundai|kia|nissan|chevrolet|suzuki|honda|mazda|volkswagen|ford|mitsubishi|subaru|renault|peugeot|bmw|mercedes|audi|jeep|chery|jac|changan|geely|byd|mg)\s+([a-zA-Z0-9]+)\b', title, re.IGNORECASE)
             if m:
                 car_model_name = f"{m.group(1)} {m.group(2)}"
                 pool = await self._get_vehicle_photos_pool(car_model_name, client=client)
                 if pool:
-                    # Seleccionar una foto que no haya sido usada previamente en la misma tanda
+                    def _score_vehicle_cand(cand: Tuple[str, str]) -> float:
+                        thumb, fname = cand
+                        fn_low = fname.lower()
+                        title_low = title.lower()
+                        sc = 100.0
+
+                        # Extracción y coincidencia del año objetivo
+                        ym = re.search(r'\b(19\d\d|20\d\d)\b', title)
+                        target_year = int(ym.group(1)) if ym else None
+
+                        fym = re.search(r'\b(19\d\d|20\d\d)\b', fn_low)
+                        file_year = int(fym.group(1)) if fym else None
+                        if not file_year:
+                            two_d = re.search(r'\b([0-2]\d)-', fn_low)
+                            if two_d:
+                                file_year = 2000 + int(two_d.group(1))
+
+                        if target_year and file_year:
+                            sc -= abs(target_year - file_year) * 5.0
+
+                        # Concordancia de carrocería (Sedán vs Hatchback)
+                        is_title_sedan = "sedan" in title_low
+                        is_fn_sedan = "sedan" in fn_low
+                        is_fn_hatch = any(k in fn_low for k in ["hatch", "hatchback", "3-door", "5-door", "1.0"])
+
+                        if is_title_sedan and is_fn_sedan:
+                            sc += 35.0
+                        elif is_title_sedan and is_fn_hatch:
+                            sc -= 45.0
+
+                        is_title_hatch = any(k in title_low for k in ["hatch", "hatchback", "3 puertas", "5 puertas"])
+                        if is_title_hatch and is_fn_hatch:
+                            sc += 35.0
+                        elif is_title_hatch and is_fn_sedan:
+                            sc -= 45.0
+
+                        return sc
+
+                    ranked_pool = sorted(pool, key=_score_vehicle_cand, reverse=True)
                     selected_photo = None
                     if used_images is not None:
-                        for cand in pool:
-                            if cand not in used_images:
-                                selected_photo = cand
+                        for cand_url, cand_fn in ranked_pool:
+                            if cand_url not in used_images:
+                                selected_photo = cand_url
                                 break
                     if not selected_photo:
-                        selected_photo = pool[item_index % len(pool)]
+                        selected_photo = ranked_pool[item_index % len(ranked_pool)][0]
                     return selected_photo
 
             # En caso de no encontrar foto enciclopédica, usar placeholder neutral (JAMÁS una funda o cobertor)
