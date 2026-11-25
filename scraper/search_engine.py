@@ -281,6 +281,65 @@ def is_full_vehicle_product(text: str, category: str = "", price: float = 0.0) -
 
     return False
 
+
+def detect_search_intent_and_entities(text: str) -> Dict[str, Any]:
+    """
+    Motor semántico inspirado en Google Knowledge Graph y Universal Search:
+    - Identifica la intención comercial (vehículos, tecnología, herramientas, moda, supermercado).
+    - Asigna las tiendas de alta prioridad para optimizar la velocidad y calidad de resultados.
+    """
+    if not text:
+        return {"intent": "general", "priority_stores": []}
+    import unicodedata
+    clean = unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('utf-8').lower().strip()
+
+    # 1. Intención automotriz
+    if is_full_vehicle_product(text):
+        return {
+            "intent": "vehiculos",
+            "is_vehicle": True,
+            "priority_stores": ["Facebook Marketplace", "Mercado Libre"],
+            "excluded_stores": list(NON_VEHICLE_STORES)
+        }
+
+    # 2. Herramientas y Mejoramiento del Hogar
+    tool_kws = ["taladro", "rotomartillo", "esmeril", "amoladora", "sierra", "atornillador", "pulidora", "compresora", "soldadora", "llave impacto", "caja herramientas", "bateria 20v", "dewalt", "bosch", "makita", "stanley", "bauker"]
+    if any(k in clean for k in tool_kws):
+        return {
+            "intent": "herramientas_hogar",
+            "priority_stores": ["Sodimac", "Promart", "Mercado Libre", "Falabella"],
+            "excluded_stores": []
+        }
+
+    # 3. Tecnología y Cómputo
+    tech_kws = ["laptop", "notebook", "computadora", "tarjeta de video", "procesador", "memoria ram", "disco ssd", "smartwatch", "auriculares", "audifonos", "monitor gamer", "tablet", "ryzen", "intel core", "playstation", "nintendo"]
+    if any(k in clean for k in tech_kws):
+        return {
+            "intent": "tecnologia_computo",
+            "priority_stores": ["Falabella", "Ripley", "Mercado Libre", "AliExpress"],
+            "excluded_stores": []
+        }
+
+    # 4. Calzado y Moda
+    fashion_kws = ["zapatillas", "zapatilla", "botas", "botines", "sandalias", "polo", "casaca", "poleron", "pantalon", "running", "nike", "adidas", "puma", "vans"]
+    if any(k in clean for k in fashion_kws):
+        return {
+            "intent": "moda_calzado",
+            "priority_stores": ["Falabella", "Ripley", "Mercado Libre", "Temu"],
+            "excluded_stores": []
+        }
+
+    # 5. Supermercado y Abarrotes
+    grocery_kws = ["arroz", "aceite vegetal", "leche", "detergente", "shampoo", "jabon", "conservas", "cafe", "galletas"]
+    if any(k in clean for k in grocery_kws):
+        return {
+            "intent": "supermercado_abarrotes",
+            "priority_stores": ["PlazaVea", "Falabella"],
+            "excluded_stores": []
+        }
+
+    return {"intent": "general", "priority_stores": [], "excluded_stores": []}
+
 # Placeholder SVG neutral genérico para productos sin imagen
 NEUTRAL_PLACEHOLDER_IMAGE = (
     "data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20"
@@ -2909,6 +2968,15 @@ class SearchEngine:
 
         # Coincidencia con inventario propio en mano
         alerta_inventario = self.check_inventory_match(query_clean)
+
+        # Detección de intención semántica y enrutamiento inteligente (inspirado en Google Search)
+        search_intent = detect_search_intent_and_entities(query_clean)
+        priority_stores = search_intent.get("priority_stores", [])
+        if priority_stores:
+            target_sites = sorted(
+                target_sites,
+                key=lambda s: 0 if s in priority_stores else 1
+            )
 
         # 1. Mapeo a métodos extractores independientes
         extractor_map = {
