@@ -2130,6 +2130,11 @@ body {
   animation: pulseGlow 2s infinite ease-in-out;
 }
 
+.search-loading-container.hidden,
+#searchLoadingIndicator.hidden {
+  display: none !important;
+}
+
 .loading-spinner-wrap {
   position: relative;
   width: 44px;
@@ -2616,6 +2621,16 @@ body {
 }
 .store-chip.empty .chip-dot {
   background: #64748b;
+}
+
+.store-chip.info {
+  border-color: rgba(56, 189, 248, 0.35);
+  background: rgba(56, 189, 248, 0.08);
+  color: #38bdf8;
+}
+.store-chip.info .chip-dot {
+  background: #0284c7;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.8);
 }
 
 .empty-store-links {

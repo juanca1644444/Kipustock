@@ -1098,7 +1098,13 @@ document.addEventListener("DOMContentLoaded", () => {
     await performSearch();
   });
 
+  let isSearching = false;
+
   async function performSearch() {
+    if (isSearching) {
+      console.warn("Búsqueda ya en curso. Omitiendo invocación concurrente.");
+      return;
+    }
     const query = DOM.searchQuery.value.trim();
     const selectedSites = state.selectedSites && state.selectedSites.length > 0
       ? [...state.selectedSites]
@@ -1109,6 +1115,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    isSearching = true;
     const maxPrice = DOM.filterMaxPrice.value ? parseFloat(DOM.filterMaxPrice.value) : null;
     const minMargin = DOM.filterMinMargin.value ? parseFloat(DOM.filterMinMargin.value) : null;
     const commission = DOM.filterCommission && DOM.filterCommission.value ? parseFloat(DOM.filterCommission.value) : 12.0;
@@ -1117,8 +1124,10 @@ document.addEventListener("DOMContentLoaded", () => {
     DOM.btnSubmitSearch.innerHTML = `<span>Rastreando...</span>`;
 
     // Mostrar indicador de carga animado de Playwright + Gemini
-    if (DOM.searchLoadingIndicator) {
-      DOM.searchLoadingIndicator.classList.remove("hidden");
+    const loaderEl = DOM.searchLoadingIndicator || document.getElementById("searchLoadingIndicator");
+    if (loaderEl) {
+      loaderEl.classList.remove("hidden");
+      loaderEl.style.removeProperty("display");
     }
     DOM.resultsEmptyState.classList.add("hidden");
 
@@ -1226,8 +1235,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const detailMsg = error.message ? error.message : "Error de conexión o fallo interno del servidor";
       showToast(`Error al consultar portales de compra: ${detailMsg}`, "error");
     } finally {
-      if (DOM.searchLoadingIndicator) {
-        DOM.searchLoadingIndicator.classList.add("hidden");
+      isSearching = false;
+      const loaderEl = DOM.searchLoadingIndicator || document.getElementById("searchLoadingIndicator");
+      if (loaderEl) {
+        loaderEl.classList.add("hidden");
+        loaderEl.style.setProperty("display", "none", "important");
       }
       DOM.btnSubmitSearch.disabled = false;
       DOM.btnSubmitSearch.innerHTML = `
@@ -1305,6 +1317,9 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (t.status === "sin_resultados") {
         chipClass = "empty";
         statusText = `⚪ ${t.tienda}: 0 items${cacheIcon} (<a href="${t.search_url}" target="_blank" rel="noopener noreferrer" title="Consultar en tienda">Ver ↗</a>)`;
+      } else if (t.status === "info") {
+        chipClass = "info";
+        statusText = `ℹ️ ${t.tienda}: ${t.mensaje || 'Información'} (<a href="${t.search_url}" target="_blank" rel="noopener noreferrer" title="Ver catálogo">Catálogo ↗</a>)`;
       } else if (t.status === "error") {
         chipClass = "warning";
         statusText = `⚠️ ${t.tienda}: Aviso (<a href="${t.search_url}" target="_blank" rel="noopener noreferrer" title="Consultar tienda">Abrir ↗</a>)`;
@@ -1374,6 +1389,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (t.status === "ok") badge = "🟢";
           else if (t.status === "bloqueado" || t.requires_unlock) badge = "🟡";
           else if (t.status === "timeout") badge = "⏱";
+          else if (t.status === "info") badge = "ℹ️";
           else if (t.status === "error") badge = "⚠️";
 
           const unlockBtn = (t.status === "bloqueado" || t.requires_unlock || t.tienda === "Temu") ? `
