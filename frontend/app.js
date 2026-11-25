@@ -4325,14 +4325,17 @@ document.addEventListener("DOMContentLoaded", () => {
       console.debug("Error consultando estado de base de datos:", e_db);
     }
 
-    await loadInventory();
-    await loadLot();
-    await loadSales();
-    await loadAlerts();
-    await loadAdminStoreConfig();
-    await loadWebOrders();
-    await loadShippingRates();
-    await loadCrmClients();
+    // Carga paralela de datos iniciales para máxima velocidad y evitar cuelgues de interfaz
+    await Promise.allSettled([
+      loadInventory(),
+      loadLot(),
+      loadSales(),
+      loadAlerts(),
+      loadAdminStoreConfig(),
+      loadWebOrders(),
+      loadShippingRates(),
+      loadCrmClients()
+    ]);
     initCampaignModule();
     initCrmModule();
     initTunnelModule();
