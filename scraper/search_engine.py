@@ -720,13 +720,43 @@ class SearchEngine:
 
     async def _find_real_product_image(self, title: str, root_query: str = "", client: Optional[httpx.AsyncClient] = None) -> str:
         """
-        Localiza una fotografía real verificada para el producto en catálogos abiertos peruanos (Oechsle y PlazaVea).
-        Aplica limpieza de modificadores ruidosos (mini, nuevo, usb, portátil) y validación semántica estricta.
-        Si la frase compuesta no produce coincidencia exacta, recurre al sustantivo raíz para garantizar que NINGÚN
-        producto quede con marco vacío o sin imagen.
+        Localiza una fotografía real verificada para el producto en catálogos abiertos peruanos (Oechsle y PlazaVea)
+        o bases enciclopédicas oficiales para vehículos.
+        NUNCA asigna fotos de cobertores, fundas o repuestos a vehículos completos.
         """
         if not title:
             return ""
+
+        # 1. Si el producto buscado es un vehículo completo (automóvil, camioneta, moto)
+        if is_full_vehicle_product(title):
+            # Prioridad A: Si el usuario subió una fotografía de este vehículo, usarla
+            current_img = getattr(self, "_current_image_url", None)
+            if current_img:
+                return current_img
+
+            # Prioridad B: Obtener fotografía automotriz real de alta resolución de la base oficial
+            m = re.search(r'\b(toyota|hyundai|kia|nissan|chevrolet|suzuki|honda|mazda|volkswagen|ford|mitsubishi|subaru|renault|peugeot|bmw|mercedes|audi|jeep|chery|jac|changan|geely|byd|mg)\s+([a-zA-Z0-9]+)\b', title, re.IGNORECASE)
+            if m:
+                car_model_name = f"{m.group(1)} {m.group(2)}"
+                wiki_url = f"https://es.wikipedia.org/w/api.php?action=query&titles={quote(car_model_name)}&prop=pageimages&pithumbsize=800&format=json"
+                wiki_headers = {"User-Agent": "KipuStock/1.0 (contact: info@kipustock.com)"}
+                try:
+                    if client:
+                        resp_wiki = await client.get(wiki_url, headers=wiki_headers, timeout=3.0)
+                    else:
+                        async with httpx.AsyncClient(headers=wiki_headers, timeout=3.0, follow_redirects=True) as local_w:
+                            resp_wiki = await local_w.get(wiki_url)
+                    if resp_wiki.status_code == 200:
+                        pages = resp_wiki.json().get("query", {}).get("pages", {})
+                        for pid, p in pages.items():
+                            src = p.get("thumbnail", {}).get("source")
+                            if src and src.startswith("http"):
+                                return src
+                except Exception as e_w:
+                    logger.debug(f"Error obteniendo foto de vehículo {car_model_name}: {e_w}")
+
+            # En caso de no encontrar foto enciclopédica, usar placeholder neutral (JAMÁS una funda o cobertor)
+            return NEUTRAL_PLACEHOLDER_IMAGE
 
         # Modificadores genéricos o ruidosos que desvían búsquedas en catálogos VTEX
         noise_modifiers = {
@@ -770,6 +800,10 @@ class SearchEngine:
                     if isinstance(data, list):
                         for p in data[:8]:
                             p_name = (p.get("productName") or "").lower()
+                            # Descartar cobertores/fundas si el producto buscado no es un cobertor
+                            is_acc_search = any(kw in clean_root for kw in ["funda", "cobertor", "cubierta", "cubre"])
+                            if not is_acc_search and any(kw in p_name for kw in ["cobertor", "funda para auto", "cubierta auto"]):
+                                continue
                             # Validación estricta: el producto debe contener la raíz del sustantivo
                             if primary_noun in p_name or noun_stem in p_name:
                                 items_list = p.get("items", [])
