@@ -718,10 +718,61 @@ class SearchEngine:
             logger.debug(f"Error parseando VTEX para {site_name}: {e}")
         return items
 
-    async def _find_real_product_image(self, title: str, root_query: str = "", client: Optional[httpx.AsyncClient] = None) -> str:
+    async def _get_vehicle_photos_pool(self, car_model_name: str, client: Optional[httpx.AsyncClient] = None) -> List[str]:
+        """Obtiene un conjunto de fotografías reales de diferentes ángulos, años y versiones para un modelo de vehículo."""
+        if not car_model_name:
+            return []
+        u = f"https://es.wikipedia.org/w/api.php?action=query&titles={quote(car_model_name)}&prop=images&format=json"
+        headers = {"User-Agent": "KipuStock/1.0 (contact: info@kipustock.com)"}
+        try:
+            if client:
+                r = await client.get(u, headers=headers, timeout=3.5)
+            else:
+                async with httpx.AsyncClient(headers=headers, timeout=3.5, follow_redirects=True) as local_c:
+                    r = await local_c.get(u)
+            if r.status_code != 200:
+                return []
+            pages = r.json().get("query", {}).get("pages", {})
+            files = []
+            for pid, p in pages.items():
+                for img in p.get("images", []):
+                    t = img.get("title", "")
+                    if any(t.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+                        if not any(k in t.lower() for k in ["logo", "emblem", "icon", "map", "flag", "question", "diagram"]):
+                            files.append(t)
+            if not files:
+                return []
+            encoded_files = quote("|".join(files[:8]))
+            u2 = f"https://es.wikipedia.org/w/api.php?action=query&titles={encoded_files}&prop=imageinfo&iiprop=url&iiurlwidth=800&format=json"
+            if client:
+                r2 = await client.get(u2, headers=headers, timeout=3.5)
+            else:
+                async with httpx.AsyncClient(headers=headers, timeout=3.5, follow_redirects=True) as local_c2:
+                    r2 = await local_c2.get(u2)
+            if r2.status_code != 200:
+                return []
+            photos = []
+            for pid, p in r2.json().get("query", {}).get("pages", {}).items():
+                thumb = p.get("imageinfo", [{}])[0].get("thumburl")
+                if thumb and thumb.startswith("http"):
+                    photos.append(thumb)
+            return photos
+        except Exception as e:
+            logger.debug(f"Error obteniendo pool de fotos para {car_model_name}: {e}")
+            return []
+
+    async def _find_real_product_image(
+        self,
+        title: str,
+        root_query: str = "",
+        client: Optional[httpx.AsyncClient] = None,
+        item_index: int = 0,
+        used_images: Optional[set] = None
+    ) -> str:
         """
         Localiza una fotografía real verificada para el producto en catálogos abiertos peruanos (Oechsle y PlazaVea)
         o bases enciclopédicas oficiales para vehículos.
+        Garantiza que cada tarjeta reciba una fotografía DISTINTA y única, evitando duplicaciones.
         NUNCA asigna fotos de cobertores, fundas o repuestos a vehículos completos.
         """
         if not title:
@@ -729,31 +780,27 @@ class SearchEngine:
 
         # 1. Si el producto buscado es un vehículo completo (automóvil, camioneta, moto)
         if is_full_vehicle_product(title):
-            # Prioridad A: Si el usuario subió una fotografía de este vehículo, usarla
+            # Prioridad A: Si el usuario subió una fotografía de este vehículo y es la primera tarjeta
             current_img = getattr(self, "_current_image_url", None)
-            if current_img:
+            if current_img and item_index == 0:
                 return current_img
 
-            # Prioridad B: Obtener fotografía automotriz real de alta resolución de la base oficial
+            # Prioridad B: Obtener pool de fotografías automotrices reales y distintas
             m = re.search(r'\b(toyota|hyundai|kia|nissan|chevrolet|suzuki|honda|mazda|volkswagen|ford|mitsubishi|subaru|renault|peugeot|bmw|mercedes|audi|jeep|chery|jac|changan|geely|byd|mg)\s+([a-zA-Z0-9]+)\b', title, re.IGNORECASE)
             if m:
                 car_model_name = f"{m.group(1)} {m.group(2)}"
-                wiki_url = f"https://es.wikipedia.org/w/api.php?action=query&titles={quote(car_model_name)}&prop=pageimages&pithumbsize=800&format=json"
-                wiki_headers = {"User-Agent": "KipuStock/1.0 (contact: info@kipustock.com)"}
-                try:
-                    if client:
-                        resp_wiki = await client.get(wiki_url, headers=wiki_headers, timeout=3.0)
-                    else:
-                        async with httpx.AsyncClient(headers=wiki_headers, timeout=3.0, follow_redirects=True) as local_w:
-                            resp_wiki = await local_w.get(wiki_url)
-                    if resp_wiki.status_code == 200:
-                        pages = resp_wiki.json().get("query", {}).get("pages", {})
-                        for pid, p in pages.items():
-                            src = p.get("thumbnail", {}).get("source")
-                            if src and src.startswith("http"):
-                                return src
-                except Exception as e_w:
-                    logger.debug(f"Error obteniendo foto de vehículo {car_model_name}: {e_w}")
+                pool = await self._get_vehicle_photos_pool(car_model_name, client=client)
+                if pool:
+                    # Seleccionar una foto que no haya sido usada previamente en la misma tanda
+                    selected_photo = None
+                    if used_images is not None:
+                        for cand in pool:
+                            if cand not in used_images:
+                                selected_photo = cand
+                                break
+                    if not selected_photo:
+                        selected_photo = pool[item_index % len(pool)]
+                    return selected_photo
 
             # En caso de no encontrar foto enciclopédica, usar placeholder neutral (JAMÁS una funda o cobertor)
             return NEUTRAL_PLACEHOLDER_IMAGE
@@ -925,13 +972,24 @@ class SearchEngine:
                     except (ValueError, TypeError):
                         continue
 
-                # Búsqueda concurrente de fotos reales de alta resolución con pool HTTP compartido
+                # Búsqueda ordenada y desduplicada de fotos reales con pool HTTP compartido
                 img_headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                 }
-                async with httpx.AsyncClient(headers=img_headers, timeout=2.5, follow_redirects=True) as shared_img_client:
-                    image_tasks = [self._find_real_product_image(t[0], root_query=query, client=shared_img_client) for t in titles_and_prices]
-                    images = await asyncio.gather(*image_tasks, return_exceptions=True)
+                async with httpx.AsyncClient(headers=img_headers, timeout=4.0, follow_redirects=True) as shared_img_client:
+                    used_images = set()
+                    images = []
+                    for i, t in enumerate(titles_and_prices):
+                        img_found = await self._find_real_product_image(
+                            t[0],
+                            root_query=query,
+                            client=shared_img_client,
+                            item_index=i,
+                            used_images=used_images
+                        )
+                        if img_found and img_found.startswith("http"):
+                            used_images.add(img_found)
+                        images.append(img_found)
 
                 for (title, p_val), img in zip(titles_and_prices, images):
                     img_src = img if (isinstance(img, str) and img.startswith("http")) else ""
