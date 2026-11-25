@@ -698,6 +698,21 @@ document.addEventListener("DOMContentLoaded", () => {
     analyzeImageWithVisionAI(file).then(aiData => {
       state.uploadedSearchImage = aiData.url || file.name;
 
+      // Si la IA detectó que la imagen no es un producto físico comercial (ej. captura de pantalla de la interfaz)
+      const prodName = (aiData.producto_identificado || "").trim();
+      const isPlaceholder = prodName.toLowerCase().includes("producto por identificar") || prodName.toLowerCase().includes("producto para identificar");
+      if (aiData.es_producto_valido === false || isPlaceholder || !prodName) {
+        showToast("⚠️ La imagen pegada es una captura de pantalla de la aplicación. Por favor pega o sube la foto directa del producto físico a cotizar.", "warning");
+        if (DOM.visionAiAnalysisCard) {
+          DOM.visionAiAnalysisCard.classList.remove("hidden");
+          DOM.visionAiProdTitle.textContent = "Captura de Pantalla (No es un artículo físico)";
+          DOM.visionAiModelText.textContent = "Sube o copia la fotografía del producto real que deseas buscar.";
+          DOM.visionAiCategoryTag.textContent = "Captura de Pantalla";
+          DOM.visionAiQueriesList.innerHTML = "";
+        }
+        return;
+      }
+
       // Autocompletar barra de búsqueda con el producto identificado
       if (aiData.producto_identificado) {
         DOM.searchQuery.value = aiData.producto_identificado;

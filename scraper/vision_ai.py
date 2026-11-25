@@ -18,9 +18,21 @@ load_dotenv()
 logger = logging.getLogger("kipustock.vision_ai")
 
 PROMPT_ANALISIS_VISUAL = """
-Analiza minuciosamente la fotografía de este producto para un sistema de arbitraje comercial y gestión de inventario en Perú.
-Devuelve EXCLUSIVAMENTE un único objeto JSON válido (un solo objeto {}, NUNCA una lista ni corchetes []) con esta estructura exacta:
+Analiza minuciosamente la fotografía para un sistema de arbitraje comercial y gestión de inventario en Perú.
+IMPORTANTE: Si la imagen es una captura de pantalla de software, interfaz de usuario de KipuStock, un chat o texto sin ningún producto físico comercial visible, devuelve:
 {
+  "es_producto_valido": false,
+  "producto_identificado": "",
+  "marca_modelo": "No visible",
+  "categoria": "Captura de interfaz",
+  "consultas_busqueda": [],
+  "precio_referencia_sugerido": 0.0,
+  "notas_visuales": "La imagen pegada es una captura de pantalla de la interfaz de la aplicación, no una foto de un producto comercial."
+}
+
+Si la imagen sí muestra un producto físico comercial (ropa, accesorio, calzado, herramienta, vehículo, tecnología, etc.), devuelve EXCLUSIVAMENTE un único objeto JSON válido con esta estructura:
+{
+  "es_producto_valido": true,
   "producto_identificado": "Nombre comercial claro y descriptivo del producto",
   "marca_modelo": "Marca y modelo o número de parte exacto visible (o 'Genérico / No visible')",
   "categoria": "Categoría comercial (ej. Herramientas, Tecnología, Ropa y Accesorios, Hogar, Calzado, etc.)",
@@ -32,7 +44,7 @@ Devuelve EXCLUSIVAMENTE un único objeto JSON válido (un solo objeto {}, NUNCA 
   "precio_referencia_sugerido": 120.00,
   "notas_visuales": "Detalles relevantes detectados como estado físico, accesorios visibles o versión"
 }
-Nota: El precio de referencia debe ser un número flotante estimado en Soles peruanos (PEN / S/). Devuelve SOLO el objeto JSON.
+Nota: El precio de referencia debe ser un número flotante estimado en Soles peruanos (PEN / S/). Devuelve SOLO el objeto JSON sin bloques markdown.
 """
 
 def get_gemini_client():
