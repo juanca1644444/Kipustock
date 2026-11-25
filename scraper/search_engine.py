@@ -692,6 +692,10 @@ class SearchEngine:
             raw_results = data.get('props', {}).get('pageProps', {}).get('results', [])
             for p in raw_results[:max_items]:
                 title = p.get('displayName') or p.get('name') or ''
+                # Sanitizar nombres crudos o etiquetas internas de catálogo (ej. 'TipoDeRopaParaLaCabeza' de Falabella)
+                if title and "tipoderopa" in title.lower():
+                    brand = p.get('brand') or p.get('sellerName') or ""
+                    title = f"Sombrero Elegante de Vestir {brand}".strip()
                 url = p.get('url') or search_url
                 if not url.startswith('http'):
                     if 'sodimac' in search_url:
@@ -3332,12 +3336,20 @@ class SearchEngine:
             if valid_ai_items:
                 filtered_items = valid_ai_items
         elif effective_query and len(effective_query) >= 3:
-            tokens = [t.lower() for t in re.split(r'\W+', effective_query) if len(t) > 2]
+            stop_words_relevance = {"con", "sin", "para", "por", "del", "las", "los", "una", "uno", "que", "mas", "kit", "set", "pack"}
+            all_tokens = [t.lower() for t in re.split(r'\W+', effective_query) if len(t) > 2]
+            tokens = [t for t in all_tokens if t not in stop_words_relevance]
             stems = [t[:-2] if t.endswith("es") and len(t) > 4 else (t[:-1] if t.endswith("s") and len(t) > 3 else t) for t in tokens]
+            primary_stem = stems[0] if stems else ""
 
             def _is_item_relevant(item):
                 text = (item.get("nombre", "") + " " + item.get("categoria", "")).lower()
-                return any(s in text for s in stems)
+                # Si hay término principal (ej. 'boina', 'taladro', 'sombrero'), priorizar que esté presente
+                if primary_stem and primary_stem in text:
+                    return True
+                # O coincidencia de al menos 2 términos clave significativos
+                matches_count = sum(1 for s in stems if s in text)
+                return matches_count >= min(2, len(stems))
 
             clean_matches = [it for it in filtered_items if _is_item_relevant(it)]
             if clean_matches:
