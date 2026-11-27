@@ -3426,22 +3426,23 @@ class SearchEngine:
                 estado_tiendas = retry_estado
                 used_broader = True
 
-        # Soporte inteligente para pasajes aéreos: Si las tiendas de retail físico no emiten pasajes, cotizar vía Google Flights / KAYAK
+        # Soporte inteligente para pasajes aéreos: SOLO cotizar en metabuscadores si el usuario seleccionó KAYAK o Web abierta
         travel_keywords = ["pasaje", "pasajes", "vuelo", "vuelos", "ticket aereo", "boleto", "boletos", "aerolinea", "aerolínea", "jetsmart", "latam", "sky airline", "kayak"]
         is_travel_q = any(kw in query_clean.lower() for kw in travel_keywords) or (
             self._current_image_info and any(kw in str(self._current_image_info.get("producto_identificado", "")).lower() for kw in travel_keywords)
         )
-        if not raw_items and is_travel_q:
-            flight_search_url = f"https://www.google.com/travel/flights?q={quote(query_clean)}"
-            flight_quotes = await self._get_gemini_store_reference("Web / Google Shopping", query_clean, flight_search_url, max_items=4)
+        if not raw_items and is_travel_q and any(s in target_sites for s in ["Web / Google Shopping", "KAYAK"]):
+            target_portal = "KAYAK" if "KAYAK" in target_sites else "Web / Google Shopping"
+            flight_search_url = f"https://www.google.com/travel/flights?q={quote(query_clean)}" if target_portal == "Web / Google Shopping" else f"https://www.kayak.com.pe/flights?q={quote(query_clean)}"
+            flight_quotes = await self._get_gemini_store_reference(target_portal, query_clean, flight_search_url, max_items=4)
             if flight_quotes:
                 raw_items = flight_quotes
                 used_broader = True
                 estado_tiendas.append({
-                    "tienda": "Web / Google Shopping",
+                    "tienda": target_portal,
                     "items_encontrados": len(flight_quotes),
                     "status": "ok",
-                    "mensaje": "Cotización de vuelos comerciales disponible vía Google Flights y KAYAK.",
+                    "mensaje": f"Cotización de vuelos comerciales disponible vía {target_portal}.",
                     "search_url": flight_search_url,
                     "requires_unlock": False,
                     "from_cache": False
@@ -3460,8 +3461,13 @@ class SearchEngine:
             "Cámara de Seguridad WiFi"
         ]
 
-        # 3. Si ninguna tienda devolvió productos reales, retornar lista vacía (CERO invenciones)
+        # 3. Si ninguna tienda devolvió productos reales, retornar lista vacía (CERO invenciones de tiendas no seleccionadas)
         if not raw_items:
+            travel_msg = (
+                f"Las tiendas seleccionadas ({', '.join(target_sites)}) no comercializan pasajes aéreos. Para buscar vuelos, activa la tienda KAYAK."
+                if is_travel_q
+                else "No se encontraron publicaciones reales en las tiendas consultadas para este término."
+            )
             return {
                 "query": query_clean,
                 "query_usada": broader_query if used_broader else query_clean,
@@ -3476,7 +3482,8 @@ class SearchEngine:
                 "estado_tiendas": estado_tiendas,
                 "tiendas_estado": estado_tiendas,  # alias para retrocompatibilidad
                 "ai_status": "sin_resultados",
-                "ai_message": "No se encontraron publicaciones reales en las tiendas consultadas para este término.",
+                "ai_message": travel_msg,
+                "sugerencia_tienda": "KAYAK" if is_travel_q and "KAYAK" not in target_sites else None,
                 "alerta_inventario": (
                     alerta_inventario.model_dump() if hasattr(alerta_inventario, "model_dump")
                     else (alerta_inventario.dict() if hasattr(alerta_inventario, "dict") else None)

@@ -1516,6 +1516,16 @@ document.addEventListener("DOMContentLoaded", () => {
         }).join("");
 
         const meta = state.searchMeta || {};
+        const kayakSuggestHtml = (meta.sugerencia_tienda === "KAYAK" && (!state.selectedSites || !state.selectedSites.includes("KAYAK"))) ? `
+          <div style="margin: 14px 0; padding: 12px 16px; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 8px; text-align: left;">
+            <div style="font-weight: 600; color: #60a5fa; margin-bottom: 4px; font-size: 0.9rem;">✈️ Esta búsqueda corresponde a Pasajes Aéreos o Vuelos</div>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0 0 10px 0;">Las tiendas seleccionadas son de retail físico (ropa/hogar). Activa KAYAK para cotizar vuelos reales:</p>
+            <button type="button" class="btn btn-primary btn-sm" id="btnActivateKayakEmpty" style="display: inline-flex; align-items: center; gap: 6px;">
+              ✈️ Activar KAYAK y Buscar Vuelos
+            </button>
+          </div>
+        ` : '';
+
         const broaderHtml = meta.sugerencia_ampliada ? `
           <div style="margin: 12px 0 8px 0;">
             <button type="button" class="btn-quick-chip" data-query="${meta.sugerencia_ampliada}" style="background: #fef3c7 !important; border: 1px solid #f59e0b !important; color: #92400e !important; font-weight: 600; padding: 6px 12px; font-size: 0.85rem;">
@@ -1543,6 +1553,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <p>Ninguna de las tiendas consultadas devolvió publicaciones válidas para este término exacto.</p>
 
           <div class="empty-diagnostic-card">
+            ${kayakSuggestHtml}
             <h5>Respuesta de las tiendas consultadas:</h5>
             <ul class="store-diagnostic-list">
               ${tiendasExplicacion || "<li>No se seleccionaron tiendas para rastrear.</li>"}
@@ -5257,6 +5268,18 @@ document.addEventListener("DOMContentLoaded", () => {
         DOM.searchQuery.value = q;
         performSearch();
       }
+      return;
+    }
+
+    const activateKayakBtn = e.target.closest("#btnActivateKayakEmpty");
+    if (activateKayakBtn) {
+      e.preventDefault();
+      if (!state.selectedSites.includes("KAYAK")) {
+        state.selectedSites.push("KAYAK");
+        renderActiveSites();
+        showToast("✈️ KAYAK activado. Rastreando tarifas de vuelo...", "info");
+      }
+      performSearch();
       return;
     }
   });
