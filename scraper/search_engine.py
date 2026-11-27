@@ -2326,6 +2326,23 @@ class SearchEngine:
         search_url = f"https://www.google.com/search?q={encoded_query}+comprar+peru+precio&tbm=shop"
         results = []
 
+        # Soporte para consultas o imágenes de viajes / pasajes aéreos (redirección a vuelos en vez de catálogos de ropa)
+        travel_keywords = ["pasaje", "pasajes", "vuelo", "vuelos", "ticket aereo", "boleto", "boletos", "aerolinea", "aerolínea", "jetsmart", "latam", "sky airline", "kayak"]
+        is_travel_q = any(kw in query.lower() for kw in travel_keywords) or (
+            getattr(self, "_current_image_info", None) and any(kw in str(self._current_image_info.get("producto_identificado", "")).lower() for kw in travel_keywords)
+        )
+        if is_travel_q:
+            travel_search_url = f"https://www.google.com/travel/flights?q={encoded_query}"
+            gemini_results = await self._get_gemini_store_reference("Web / Google Shopping", query, travel_search_url, max_items)
+            if gemini_results:
+                return {
+                    "tienda": "Web / Google Shopping",
+                    "items": gemini_results,
+                    "status": "ok",
+                    "mensaje": f"{len(gemini_results)} cotizaciones de vuelos encontradas vía Google Flights.",
+                    "search_url": travel_search_url
+                }
+
         # 1. Consulta HTTP ultraligera a la red de catálogos comerciales web de Perú (Oechsle / VTEX)
         try:
             headers = {
@@ -2727,11 +2744,38 @@ class SearchEngine:
         # Detección de portales de vuelos y turismo (no son tiendas de mercadería física)
         is_travel_portal = any(t in (store.nombre + " " + (store.url_web or "")).lower() for t in ["kayak", "despegar", "skyscanner", "booking", "expedia", "trivago"])
         if is_travel_portal:
+            items = []
+            img_info = getattr(self, "_current_image_info", None)
+            img_url = getattr(self, "_current_image_url", None)
+
+            # Prioridad A: Si el usuario subió una captura de pantalla de un vuelo o pasaje (ej. Kayak o JetSMART)
+            if img_info and img_info.get("producto_identificado"):
+                flight_title = str(img_info.get("producto_identificado")).strip()
+                flight_price = float(img_info.get("precio_referencia_sugerido") or 239.0)
+                item_val = self._validate_and_sanitize_item({
+                    "nombre": flight_title,
+                    "precio_compra": flight_price,
+                    "foto_url": img_url or "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=600&auto=format&fit=crop&q=80",
+                    "url_compra": store.url_web or "https://www.kayak.com.pe",
+                    "sitio": store.nombre,
+                    "disponibilidad": f"Tarifa en {store.nombre}",
+                    "calificacion": 4.8,
+                    "envio": "Boleto Electrónico (E-Ticket Inmediato)"
+                }, store.nombre, store.url_web or "https://www.kayak.com.pe")
+                if item_val:
+                    items.append(item_val)
+
+            # Prioridad B: Cotizar tarifas de vuelo con Google Flights / Kayak referencia
+            if not items:
+                flight_refs = await self._get_gemini_store_reference(store.nombre, query, store.url_web or "https://www.kayak.com.pe", max_items=max_items)
+                if flight_refs:
+                    items.extend(flight_refs)
+
             return {
                 "tienda": store.nombre,
-                "items": [],
-                "status": "info",
-                "mensaje": f"{store.nombre} es un metabuscador de vuelos/hoteles. Requiere fechas y aeropuertos directamente en su portal.",
+                "items": items,
+                "status": "ok" if items else "info",
+                "mensaje": f"{len(items)} cotizaciones de vuelos disponibles en {store.nombre}." if items else f"Metabuscador {store.nombre} disponible para consulta directa de fechas.",
                 "search_url": store.url_web or "https://www.kayak.com.pe",
                 "is_custom": True,
                 "url_web": store.url_web,
@@ -3174,6 +3218,20 @@ class SearchEngine:
                     "search_url": f"https://www.{site_name.lower().replace(' ', '')}.com.pe"
                 }
 
+            # Informar con claridad en tiendas retail que no comercializan pasajes aéreos comerciales
+            travel_keywords = ["pasaje", "pasajes", "vuelo", "vuelos", "ticket aereo", "boleto", "boletos", "aerolinea", "aerolínea", "jetsmart", "latam", "sky airline", "kayak"]
+            is_travel_q = any(kw in q.lower() for kw in travel_keywords) or (
+                self._current_image_info and any(kw in str(self._current_image_info.get("producto_identificado", "")).lower() for kw in travel_keywords)
+            )
+            if site_name not in ["Web / Google Shopping"] and is_travel_q and site_name in ["Falabella", "Ripley", "Sodimac", "Promart", "PlazaVea", "Temu", "AliExpress"]:
+                return {
+                    "tienda": site_name,
+                    "items": [],
+                    "status": "info",
+                    "mensaje": f"{site_name} comercializa mercadería física de retail (no emite pasajes aéreos).",
+                    "search_url": f"https://www.{site_name.lower().replace(' ', '')}.com.pe"
+                }
+
             # Comprobar caché local (12 min TTL) de forma segura
             try:
                 cached = search_cache.get(site_name, q)
@@ -3320,6 +3378,27 @@ class SearchEngine:
                 raw_items = retry_items
                 estado_tiendas = retry_estado
                 used_broader = True
+
+        # Soporte inteligente para pasajes aéreos: Si las tiendas de retail físico no emiten pasajes, cotizar vía Google Flights / KAYAK
+        travel_keywords = ["pasaje", "pasajes", "vuelo", "vuelos", "ticket aereo", "boleto", "boletos", "aerolinea", "aerolínea", "jetsmart", "latam", "sky airline", "kayak"]
+        is_travel_q = any(kw in query_clean.lower() for kw in travel_keywords) or (
+            self._current_image_info and any(kw in str(self._current_image_info.get("producto_identificado", "")).lower() for kw in travel_keywords)
+        )
+        if not raw_items and is_travel_q:
+            flight_search_url = f"https://www.google.com/travel/flights?q={quote(query_clean)}"
+            flight_quotes = await self._get_gemini_store_reference("Web / Google Shopping", query_clean, flight_search_url, max_items=4)
+            if flight_quotes:
+                raw_items = flight_quotes
+                used_broader = True
+                estado_tiendas.append({
+                    "tienda": "Web / Google Shopping",
+                    "items_encontrados": len(flight_quotes),
+                    "status": "ok",
+                    "mensaje": "Cotización de vuelos comerciales disponible vía Google Flights y KAYAK.",
+                    "search_url": flight_search_url,
+                    "requires_unlock": False,
+                    "from_cache": False
+                })
 
         elapsed_ms = int((time.time() - start_time) * 1000)
         from_cache_all = (cache_hits > 0 and cache_hits >= len(tasks))
