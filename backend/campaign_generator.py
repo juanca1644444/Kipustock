@@ -30,12 +30,23 @@ CAMPAIGNS_DIR.mkdir(parents=True, exist_ok=True)
 # ============================================================================
 
 def _get_font(size: int, bold: bool = False):
-    """Carga fuente TrueType del sistema Windows o fuente por defecto de Pillow."""
+    """Carga fuente TrueType empaquetada, del sistema (Windows/Linux) o fallback escalado."""
+    bundled_bold = BASE_DIR / "backend" / "fonts" / "font-bold.ttf"
+    bundled_reg = BASE_DIR / "backend" / "fonts" / "font-regular.ttf"
+
     font_paths = [
+        str(bundled_bold if bold else bundled_reg),
+        str(bundled_reg),
+        # Windows
         "C:\\Windows\\Fonts\\arialbd.ttf" if bold else "C:\\Windows\\Fonts\\arial.ttf",
         "C:\\Windows\\Fonts\\segoeuib.ttf" if bold else "C:\\Windows\\Fonts\\segoeui.ttf",
         "C:\\Windows\\Fonts\\calibrib.ttf" if bold else "C:\\Windows\\Fonts\\calibri.ttf",
         "C:\\Windows\\Fonts\\tahomabd.ttf" if bold else "C:\\Windows\\Fonts\\tahoma.ttf",
+        # Linux / Render / Docker
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf" if bold else "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
     ]
     for p in font_paths:
         if os.path.exists(p):
@@ -43,7 +54,10 @@ def _get_font(size: int, bold: bool = False):
                 return ImageFont.truetype(p, size)
             except Exception:
                 continue
-    return ImageFont.load_default()
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
 
 
 def _draw_gradient_v(base_img: Image.Image, color_top: Tuple[int, int, int], color_bot: Tuple[int, int, int]):
@@ -203,21 +217,22 @@ def generate_feed_1x1_image(
     )
 
     # 1. Cabecera superior
-    font_badge = _get_font(22, bold=True)
-    badge_w = 390
-    draw.rounded_rectangle([margin + 28, margin + 26, margin + 28 + badge_w, margin + 74], radius=16, fill=palette["badge_bg"])
-    draw.text((margin + 46, margin + 37), palette["tag"], fill=palette["badge_txt"], font=font_badge)
+    font_badge = _get_font(28, bold=True)
+    bbox_b = draw.textbbox((0, 0), palette["tag"], font=font_badge)
+    badge_w = (bbox_b[2] - bbox_b[0]) + 48
+    draw.rounded_rectangle([margin + 20, margin + 20, margin + 20 + badge_w, margin + 80], radius=18, fill=palette["badge_bg"])
+    draw.text((margin + 44, margin + 34), palette["tag"], fill=palette["badge_txt"], font=font_badge)
 
-    font_brand = _get_font(20, bold=True)
+    font_brand = _get_font(24, bold=True)
     brand_str = "KIPUSTOCK OFICIAL"
     bbox_br = draw.textbbox((0, 0), brand_str, font=font_brand)
-    draw.text((width - margin - 32 - (bbox_br[2] - bbox_br[0]), margin + 37), brand_str, fill=(148, 163, 184), font=font_brand)
+    draw.text((width - margin - 24 - (bbox_br[2] - bbox_br[0]), margin + 36), brand_str, fill=(148, 163, 184), font=font_brand)
 
     # 2. Pedestal / Contenedor central del producto
     pedestal_x1 = width // 2 - 310
-    pedestal_y1 = 150
+    pedestal_y1 = 135
     pedestal_x2 = width // 2 + 310
-    pedestal_y2 = 680
+    pedestal_y2 = 635
 
     draw.rounded_rectangle(
         [pedestal_x1, pedestal_y1, pedestal_x2, pedestal_y2],
@@ -243,58 +258,58 @@ def generate_feed_1x1_image(
         # Fallback gráfico limpio si no hay foto
         font_icon = _get_font(90, bold=True)
         draw.text((width // 2 - 45, pedestal_y1 + 170), "📦", font=font_icon)
-        font_subcard = _get_font(24, bold=True)
+        font_subcard = _get_font(26, bold=True)
         fallback_lbl = (product_data.get("estado") or "PRODUCTO VERIFICADO").upper()
         bbox_fb = draw.textbbox((0, 0), fallback_lbl, font=font_subcard)
         draw.text((width // 2 - (bbox_fb[2] - bbox_fb[0]) // 2, pedestal_y1 + 320), fallback_lbl, fill=(100, 116, 139), font=font_subcard)
 
     # 3. Datos del producto
-    font_title = _get_font(38, bold=True)
+    font_title = _get_font(44, bold=True)
     nombre = product_data.get("nombre") or "Producto Exclusivo KipuStock"
-    lines = _wrap_text(nombre, font_title, width - (margin * 2) - 80, draw)
-    title_y = 715
+    lines = _wrap_text(nombre, font_title, width - (margin * 2) - 40, draw)
+    title_y = 665
     for line in lines[:2]:
         bbox_l = draw.textbbox((0, 0), line, font=font_title)
         draw.text(((width - (bbox_l[2] - bbox_l[0])) // 2, title_y), line, fill=(255, 255, 255), font=font_title)
-        title_y += 46
+        title_y += 56
 
     # 4. Fila de Precio y Descuento
     precio_venta = float(product_data.get("precio_venta") or 0.0)
     precio_oferta = float(product_data.get("precio_oferta") or 0.0) if product_data.get("precio_oferta") else None
     simbolo = "S/" if moneda == "PEN" else "$"
 
-    price_box_y = max(title_y + 10, 830)
-    font_price = _get_font(42, bold=True)
-    font_old = _get_font(24, bold=False)
+    price_box_y = max(title_y + 14, 795)
+    font_price = _get_font(56, bold=True)
+    font_old = _get_font(28, bold=True)
 
     if precio_oferta and precio_oferta < precio_venta:
         txt_old = f"Antes: {simbolo} {precio_venta:.2f}"
         txt_offer = f"HOY: {simbolo} {precio_oferta:.2f}"
         
-        box_w = 480
-        box_h = 70
+        box_w = 580
+        box_h = 86
         bx1 = (width - box_w) // 2
-        draw.rounded_rectangle([bx1, price_box_y, bx1 + box_w, price_box_y + box_h], radius=18, fill=palette["price_badge"])
+        draw.rounded_rectangle([bx1, price_box_y, bx1 + box_w, price_box_y + box_h], radius=22, fill=palette["price_badge"])
         
-        draw.text((bx1 + 25, price_box_y + 18), txt_old, fill=(226, 232, 240), font=font_old)
-        bbox_o = draw.textbbox((bx1 + 25, price_box_y + 18), txt_old, font=font_old)
-        draw.line([(bbox_o[0], bbox_o[1] + 16), (bbox_o[2], bbox_o[1] + 16)], fill=(239, 68, 68), width=3)
-        draw.text((bx1 + 230, price_box_y + 10), txt_offer, fill=(255, 255, 255), font=font_price)
+        draw.text((bx1 + 28, price_box_y + 24), txt_old, fill=(226, 232, 240), font=font_old)
+        bbox_o = draw.textbbox((bx1 + 28, price_box_y + 24), txt_old, font=font_old)
+        draw.line([(bbox_o[0], bbox_o[1] + 16), (bbox_o[2], bbox_o[1] + 16)], fill=(239, 68, 68), width=4)
+        draw.text((bx1 + 280, price_box_y + 12), txt_offer, fill=(255, 255, 255), font=font_price)
     else:
         txt_price = f"PRECIO: {simbolo} {precio_venta:.2f}"
         bbox_p = draw.textbbox((0, 0), txt_price, font=font_price)
         pw = bbox_p[2] - bbox_p[0]
-        box_w = pw + 80
-        box_h = 66
+        box_w = pw + 90
+        box_h = 80
         bx1 = (width - box_w) // 2
-        draw.rounded_rectangle([bx1, price_box_y, bx1 + box_w, price_box_y + box_h], radius=18, fill=palette["price_badge"])
-        draw.text((bx1 + 40, price_box_y + 8), txt_price, fill=(255, 255, 255), font=font_price)
+        draw.rounded_rectangle([bx1, price_box_y, bx1 + box_w, price_box_y + box_h], radius=20, fill=palette["price_badge"])
+        draw.text((bx1 + 45, price_box_y + 12), txt_price, fill=(255, 255, 255), font=font_price)
 
     # 5. Barra inferior de confianza
-    font_trust = _get_font(20, bold=True)
+    font_trust = _get_font(24, bold=True)
     trust_str = "🚚 Envíos a Domicilio   •   💳 Yape / Plin   •   ⚡ Stock Verificado"
     bbox_tr = draw.textbbox((0, 0), trust_str, font=font_trust)
-    draw.text(((width - (bbox_tr[2] - bbox_tr[0])) // 2, height - margin - 50), trust_str, fill=(148, 163, 184), font=font_trust)
+    draw.text(((width - (bbox_tr[2] - bbox_tr[0])) // 2, height - margin - 46), trust_str, fill=(203, 213, 225), font=font_trust)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     base.save(output_path, format="PNG")
@@ -325,19 +340,22 @@ def generate_story_9x16_image(
     draw.rounded_rectangle([40, 220, width - 40, height - 260], radius=32, outline=(51, 65, 85, 140), width=2)
 
     # 1. Cabecera
-    font_top_badge = _get_font(26, bold=True)
-    draw.rounded_rectangle([width//2 - 260, 260, width//2 + 260, 320], radius=16, fill=palette["badge_bg"])
+    font_top_badge = _get_font(32, bold=True)
     bbox_t = draw.textbbox((0, 0), palette["tag"], font=font_top_badge)
-    draw.text((width//2 - (bbox_t[2] - bbox_t[0])//2, 274), palette["tag"], fill=palette["badge_txt"], font=font_top_badge)
+    top_b_w = (bbox_t[2] - bbox_t[0]) + 60
+    draw.rounded_rectangle([width//2 - top_b_w//2, 250, width//2 + top_b_w//2, 325], radius=20, fill=palette["badge_bg"])
+    draw.text((width//2 - (bbox_t[2] - bbox_t[0])//2, 268), palette["tag"], fill=palette["badge_txt"], font=font_top_badge)
 
-    font_brand = _get_font(22, bold=True)
-    draw.text((width//2 - 110, 345), "KIPUSTOCK STORE", fill=(148, 163, 184), font=font_brand)
+    font_brand = _get_font(26, bold=True)
+    brand_lbl = "KIPUSTOCK OFICIAL"
+    bbox_br = draw.textbbox((0, 0), brand_lbl, font=font_brand)
+    draw.text((width//2 - (bbox_br[2] - bbox_br[0])//2, 345), brand_lbl, fill=(148, 163, 184), font=font_brand)
 
     # 2. Hero Producto
     pedestal_x1 = width // 2 - 380
     pedestal_y1 = 400
     pedestal_x2 = width // 2 + 380
-    pedestal_y2 = 1080
+    pedestal_y2 = 1040
 
     draw.rounded_rectangle(
         [pedestal_x1, pedestal_y1, pedestal_x2, pedestal_y2],
@@ -363,66 +381,66 @@ def generate_story_9x16_image(
         draw.text((width // 2 - 60, pedestal_y1 + 260), "📦", font=font_icon)
 
     # 3. Título del producto
-    font_title = _get_font(44, bold=True)
+    font_title = _get_font(52, bold=True)
     nombre = product_data.get("nombre") or "Producto Exclusivo KipuStock"
-    lines = _wrap_text(nombre, font_title, width - 140, draw)
-    title_y = 1130
+    lines = _wrap_text(nombre, font_title, width - 120, draw)
+    title_y = 1080
     for line in lines[:2]:
         bbox_l = draw.textbbox((0, 0), line, font=font_title)
         draw.text(((width - (bbox_l[2] - bbox_l[0])) // 2, title_y), line, fill=(255, 255, 255), font=font_title)
-        title_y += 54
+        title_y += 62
 
     # 4. Estado y Garantía
-    font_tags = _get_font(24, bold=True)
+    font_tags = _get_font(28, bold=True)
     estado_lbl = f"ESTADO: {(product_data.get('estado') or 'NUEVO').upper()}  •  GARANTÍA OFICIAL"
     bbox_est = draw.textbbox((0, 0), estado_lbl, font=font_tags)
-    draw.text(((width - (bbox_est[2] - bbox_est[0])) // 2, title_y + 8), estado_lbl, fill=palette["accent"], font=font_tags)
+    draw.text(((width - (bbox_est[2] - bbox_est[0])) // 2, title_y + 10), estado_lbl, fill=palette["accent"], font=font_tags)
 
     # 5. Precio
     precio_venta = float(product_data.get("precio_venta") or 0.0)
     precio_oferta = float(product_data.get("precio_oferta") or 0.0) if product_data.get("precio_oferta") else None
     simbolo = "S/" if moneda == "PEN" else "$"
 
-    font_mega = _get_font(56, bold=True)
-    font_sub_price = _get_font(26, bold=False)
+    font_mega = _get_font(68, bold=True)
+    font_sub_price = _get_font(30, bold=False)
 
-    price_box_y = title_y + 55
+    price_box_y = title_y + 60
     if precio_oferta and precio_oferta < precio_venta:
         txt_offer = f"HOY {simbolo} {precio_oferta:.2f}"
         txt_prev = f"Precio regular: {simbolo} {precio_venta:.2f}"
-        box_w = 540
-        box_h = 110
+        box_w = 580
+        box_h = 130
         bx1 = (width - box_w) // 2
-        draw.rounded_rectangle([bx1, price_box_y, bx1 + box_w, price_box_y + box_h], radius=22, fill=palette["price_badge"])
+        draw.rounded_rectangle([bx1, price_box_y, bx1 + box_w, price_box_y + box_h], radius=24, fill=palette["price_badge"])
         
-        draw.text((bx1 + (box_w - draw.textbbox((0,0), txt_offer, font=font_mega)[2])//2, price_box_y + 12), txt_offer, fill=(255, 255, 255), font=font_mega)
-        draw.text((bx1 + (box_w - draw.textbbox((0,0), txt_prev, font=font_sub_price)[2])//2, price_box_y + 72), txt_prev, fill=(226, 232, 240), font=font_sub_price)
+        draw.text((bx1 + (box_w - draw.textbbox((0,0), txt_offer, font=font_mega)[2])//2, price_box_y + 14), txt_offer, fill=(255, 255, 255), font=font_mega)
+        draw.text((bx1 + (box_w - draw.textbbox((0,0), txt_prev, font=font_sub_price)[2])//2, price_box_y + 82), txt_prev, fill=(226, 232, 240), font=font_sub_price)
     else:
         txt_price = f"{simbolo} {precio_venta:.2f}"
         txt_sub = "¡OFERTA DISPONIBLE HOY!"
-        box_w = 480
-        box_h = 105
+        box_w = 520
+        box_h = 120
         bx1 = (width - box_w) // 2
-        draw.rounded_rectangle([bx1, price_box_y, bx1 + box_w, price_box_y + box_h], radius=22, fill=palette["price_badge"])
+        draw.rounded_rectangle([bx1, price_box_y, bx1 + box_w, price_box_y + box_h], radius=24, fill=palette["price_badge"])
         
-        draw.text((bx1 + (box_w - draw.textbbox((0,0), txt_price, font=font_mega)[2])//2, price_box_y + 10), txt_price, fill=(255, 255, 255), font=font_mega)
-        draw.text((bx1 + (box_w - draw.textbbox((0,0), txt_sub, font=font_sub_price)[2])//2, price_box_y + 70), txt_sub, fill=(241, 245, 249), font=font_sub_price)
+        draw.text((bx1 + (box_w - draw.textbbox((0,0), txt_price, font=font_mega)[2])//2, price_box_y + 12), txt_price, fill=(255, 255, 255), font=font_mega)
+        draw.text((bx1 + (box_w - draw.textbbox((0,0), txt_sub, font=font_sub_price)[2])//2, price_box_y + 80), txt_sub, fill=(241, 245, 249), font=font_sub_price)
 
     # 6. Botón CTA
-    cta_y = price_box_y + 130
-    font_cta = _get_font(28, bold=True)
+    cta_y = price_box_y + 155
+    font_cta = _get_font(32, bold=True)
     cta_txt = "📲 RESPONDE ESTE ESTADO O TOCA EL LINK"
-    cta_w = 660
-    cta_h = 68
+    cta_w = 720
+    cta_h = 80
     cx1 = (width - cta_w) // 2
-    draw.rounded_rectangle([cx1, cta_y, cx1 + cta_w, cta_y + cta_h], radius=18, fill=(37, 211, 102))
-    draw.text((cx1 + 35, cta_y + 18), cta_txt, fill=(4, 47, 26), font=font_cta)
+    draw.rounded_rectangle([cx1, cta_y, cx1 + cta_w, cta_y + cta_h], radius=20, fill=(37, 211, 102))
+    draw.text((cx1 + 40, cta_y + 22), cta_txt, fill=(4, 47, 26), font=font_cta)
 
     # 7. Confianza
-    font_trust = _get_font(22, bold=True)
+    font_trust = _get_font(26, bold=True)
     trust_txt = "🚚 Envíos a todo el Perú   •   💳 Paga con Yape o Plin"
     bbox_tr = draw.textbbox((0, 0), trust_txt, font=font_trust)
-    draw.text(((width - (bbox_tr[2] - bbox_tr[0])) // 2, cta_y + 90), trust_txt, fill=(148, 163, 184), font=font_trust)
+    draw.text(((width - (bbox_tr[2] - bbox_tr[0])) // 2, cta_y + 105), trust_txt, fill=(148, 163, 184), font=font_trust)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     base.save(output_path, format="PNG")

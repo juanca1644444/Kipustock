@@ -502,11 +502,21 @@ def _create_styled_catalog_image(target_path: Path, nombre: str, descripcion: st
 
 
 def _get_font(size: int, bold: bool = False):
-    """Carga fuente TrueType estándar de Windows si existe, o fuente default de Pillow."""
+    """Carga fuente TrueType empaquetada, del sistema (Windows/Linux) o fallback escalado."""
+    bundled_bold = BASE_DIR / "backend" / "fonts" / "font-bold.ttf"
+    bundled_reg = BASE_DIR / "backend" / "fonts" / "font-regular.ttf"
+
     font_paths = [
+        str(bundled_bold if bold else bundled_reg),
+        str(bundled_reg),
+        # Windows
         "C:\\Windows\\Fonts\\arialbd.ttf" if bold else "C:\\Windows\\Fonts\\arial.ttf",
         "C:\\Windows\\Fonts\\segoeuib.ttf" if bold else "C:\\Windows\\Fonts\\segoeui.ttf",
-        "C:\\Windows\\Fonts\\calibrib.ttf" if bold else "C:\\Windows\\Fonts\\calibri.ttf"
+        "C:\\Windows\\Fonts\\calibrib.ttf" if bold else "C:\\Windows\\Fonts\\calibri.ttf",
+        # Linux / Render / Docker
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf" if bold else "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
     ]
     for p in font_paths:
         if os.path.exists(p):
@@ -514,4 +524,7 @@ def _get_font(size: int, bold: bool = False):
                 return ImageFont.truetype(p, size)
             except Exception:
                 continue
-    return ImageFont.load_default()
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
