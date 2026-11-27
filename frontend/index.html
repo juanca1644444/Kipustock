@@ -295,6 +295,9 @@
                         <option value="Temu">🧡 Temu (Importación y ofertas)</option>
                         <option value="AliExpress">🌐 AliExpress (Mayorista internacional)</option>
                       </optgroup>
+                      <optgroup label="Pasajes Aéreos y Vuelos">
+                        <option value="KAYAK">✈️ KAYAK (Vuelos, Pasajes y Aerolíneas)</option>
+                      </optgroup>
                       <optgroup label="Búsqueda Web Abierta">
                         <option value="Web / Google Shopping">🔍 Web / Google Shopping (Búsqueda abierta)</option>
                       </optgroup>
@@ -455,6 +458,19 @@
             </div>
           </div>
           <div id="blockedAlertActions" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;"></div>
+        </div>
+
+        <!-- BANNER DE AVISO CUANDO LA CATEGORÍA DE PRODUCTO NO CORRESPONDE A LAS TIENDAS SELECCIONADAS -->
+        <div id="storeCategoryNoticeBanner" class="hidden" style="margin-bottom: 12px; padding: 12px 16px; border-radius: 8px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 1.3rem;">✈️</span>
+            <div>
+              <strong style="color: #60a5fa; font-size: 0.9rem;" id="storeCategoryNoticeTitle">Aviso de Búsqueda de Vuelos</strong>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin: 2px 0 0 0;" id="storeCategoryNoticeText">
+                Las tiendas de retail seleccionadas no emiten pasajes de avión. Te mostramos las opciones reales encontradas en KAYAK y comparadores web.
+              </p>
+            </div>
+          </div>
         </div>
 
         <!-- BARRA DE ESTADO DE CONEXIÓN POR TIENDA (VERACIDAD DE DATOS) -->

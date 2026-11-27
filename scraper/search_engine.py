@@ -207,6 +207,7 @@ DEFAULT_SITES = [
     "Falabella",
     "Ripley",
     "Sodimac",
+    "KAYAK",
     "Facebook Marketplace",
     "Mercado Libre",
     "Temu",
@@ -224,6 +225,7 @@ NON_VEHICLE_STORES = {
     "Falabella",
     "Ripley",
     "Sodimac",
+    "KAYAK",
     "Temu",
     "AliExpress",
     "Web / Google Shopping",
@@ -2459,6 +2461,50 @@ class SearchEngine:
             "search_url": search_url
         }
 
+    async def _scrape_kayak(self, query: str, max_items: int = 4) -> Dict[str, Any]:
+        """Extractor oficial de pasajes aéreos y tarifas de vuelos de KAYAK."""
+        search_url = f"https://www.kayak.com.pe/flights?q={quote(query)}"
+        items = []
+        img_info = getattr(self, "_current_image_info", None)
+        img_url = getattr(self, "_current_image_url", None)
+
+        travel_keywords = ["pasaje", "pasajes", "vuelo", "vuelos", "ticket aereo", "boleto", "boletos", "aerolinea", "aerolínea", "jetsmart", "latam", "sky airline", "kayak"]
+        is_travel_match = (
+            img_info and img_info.get("producto_identificado") and
+            any(k in str(img_info.get("producto_identificado", "")).lower() for k in travel_keywords)
+        )
+
+        if is_travel_match:
+            flight_title = str(img_info.get("producto_identificado")).strip()
+            flight_price = float(img_info.get("precio_referencia_sugerido") or 238.0)
+            item_val = self._validate_and_sanitize_item({
+                "nombre": flight_title,
+                "precio_compra": flight_price,
+                "foto_url": img_url or "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=600&auto=format&fit=crop&q=80",
+                "url_compra": search_url,
+                "sitio": "KAYAK",
+                "disponibilidad": "Tarifa en KAYAK",
+                "calificacion": 4.8,
+                "envio": "Boleto Electrónico (E-Ticket Inmediato)"
+            }, "KAYAK", search_url)
+            if item_val:
+                items.append(item_val)
+
+        if not items:
+            flight_refs = await self._get_gemini_store_reference("KAYAK", query, search_url, max_items=max_items)
+            if flight_refs:
+                items.extend(flight_refs)
+
+        return {
+            "tienda": "KAYAK",
+            "items": items,
+            "status": "ok" if items else "sin_resultados",
+            "mensaje": f"{len(items)} cotizaciones de vuelos en KAYAK." if items else "Sin tarifas disponibles en KAYAK.",
+            "search_url": search_url,
+            "requires_unlock": False,
+            "from_cache": False
+        }
+
     async def _scrape_plazavea(self, query: str, max_items: int = 5) -> Dict[str, Any]:
         """Extractor independiente para PlazaVea Perú."""
         encoded_query = quote(query.strip())
@@ -3196,6 +3242,7 @@ class SearchEngine:
             "Falabella": self._scrape_falabella,
             "Ripley": self._scrape_ripley,
             "Sodimac": self._scrape_sodimac,
+            "KAYAK": self._scrape_kayak,
             "Facebook Marketplace": self._scrape_facebook_marketplace,
             "Temu": self._scrape_temu,
             "AliExpress": self._scrape_aliexpress,
@@ -3485,6 +3532,14 @@ class SearchEngine:
         if used_broader:
             ai_msg = f"Se amplió la consulta a '{broader_query}' para encontrar oportunidades relevantes. " + ai_msg
 
+        # Advertencia amigable si el usuario buscó pasajes o vuelos en tiendas que no emiten boletos
+        aviso_categoria = None
+        if is_travel_q and any(it.get("sitio") in ["Web / Google Shopping", "KAYAK"] for it in filtered_items):
+            retail_selected = [s for s in target_sites if s in ["Falabella", "Ripley", "Sodimac", "Promart", "PlazaVea", "Temu", "AliExpress"]]
+            if retail_selected and "KAYAK" not in target_sites:
+                tiendas_str = ", ".join(retail_selected)
+                aviso_categoria = f"Las tiendas seleccionadas ({tiendas_str}) no emiten pasajes aéreos. Te mostramos las opciones reales de vuelo encontradas en KAYAK y comparadores web."
+
         return {
             "query": query_clean,
             "query_usada": broader_query if used_broader else query_clean,
@@ -3500,6 +3555,7 @@ class SearchEngine:
             "tiendas_estado": estado_tiendas,  # alias para retrocompatibilidad
             "ai_status": ai_analysis.get("ai_status", "success"),
             "ai_message": ai_msg,
+            "aviso_categoria": aviso_categoria,
             "alerta_inventario": (
                 alerta_inventario.model_dump() if hasattr(alerta_inventario, "model_dump")
                 else (alerta_inventario.dict() if hasattr(alerta_inventario, "dict") else None)

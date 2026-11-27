@@ -14,6 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
     { id: "Falabella", name: "Falabella Perú", icon: "🛒", badge: "Catálogo en vivo" },
     { id: "Ripley", name: "Ripley Perú", icon: "🛍️", badge: "Catálogo en vivo" },
     { id: "Sodimac", name: "Sodimac Perú", icon: "🔨", badge: "Hogar y herramientas" },
+    { id: "KAYAK", name: "KAYAK Vuelos & Viajes", icon: "✈️", badge: "Pasajes y aerolíneas" },
     { id: "Facebook Marketplace", name: "Facebook Marketplace", icon: "👥", badge: "Arbitraje P2P" },
     { id: "Mercado Libre", name: "Mercado Libre Perú", icon: "📦", badge: "Marketplace nacional" },
     { id: "Temu", name: "Temu", icon: "🧡", badge: "Importación y ofertas" },
@@ -317,6 +318,8 @@ document.addEventListener("DOMContentLoaded", () => {
     resultsCacheBadge: document.getElementById("resultsCacheBadge"),
     resultsBroadenedBadge: document.getElementById("resultsBroadenedBadge"),
     storeBlockedAlertBanner: document.getElementById("storeBlockedAlertBanner"),
+    storeCategoryNoticeBanner: document.getElementById("storeCategoryNoticeBanner"),
+    storeCategoryNoticeText: document.getElementById("storeCategoryNoticeText"),
     blockedAlertTitle: document.getElementById("blockedAlertTitle"),
     blockedAlertDesc: document.getElementById("blockedAlertDesc"),
     blockedAlertActions: document.getElementById("blockedAlertActions"),
@@ -743,6 +746,18 @@ document.addEventListener("DOMContentLoaded", () => {
           });
           DOM.visionAiQueriesList.appendChild(chip);
         });
+
+        // Si se reconoce un pasaje aéreo o vuelo, asegurar que KAYAK esté en las tiendas activas
+        const travelTerms = ["pasaje", "vuelo", "jetsmart", "latam", "sky airline", "kayak", "aerolínea"];
+        const isTravelDetected = (aiData.categoria && aiData.categoria.toLowerCase().includes("vuelo")) ||
+          travelTerms.some(term => (aiData.producto_identificado || "").toLowerCase().includes(term));
+        if (isTravelDetected) {
+          if (!state.selectedSites.includes("KAYAK")) {
+            state.selectedSites.push("KAYAK");
+            renderActiveSites();
+            showToast("✈️ Pasaje aéreo detectado: Se añadió KAYAK a tus tiendas activas.", "info");
+          }
+        }
       }
 
       showToast("✨ Producto reconocido con IA. Iniciando rastreo...", "success");
@@ -1157,6 +1172,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (DOM.storeBlockedAlertBanner) {
       DOM.storeBlockedAlertBanner.classList.add("hidden");
     }
+    if (DOM.storeCategoryNoticeBanner) {
+      DOM.storeCategoryNoticeBanner.classList.add("hidden");
+    }
     if (DOM.inventoryMatchAlert) {
       DOM.inventoryMatchAlert.classList.add("hidden");
     }
@@ -1265,6 +1283,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Renderizar banner de tiendas bloqueadas si alguna requiere verificación antibot
       renderBlockedStoresBanner(estadoTiendas);
+
+      // Mostrar aviso si las tiendas seleccionadas no corresponden a la categoría buscada (ej. vuelos vs retail)
+      if (DOM.storeCategoryNoticeBanner) {
+        if (data.aviso_categoria) {
+          if (DOM.storeCategoryNoticeText) {
+            DOM.storeCategoryNoticeText.textContent = data.aviso_categoria;
+          }
+          DOM.storeCategoryNoticeBanner.classList.remove("hidden");
+        } else {
+          DOM.storeCategoryNoticeBanner.classList.add("hidden");
+        }
+      }
 
       // Renderizar etiquetas de diagnóstico de cada tienda consultada
       renderStoreStatusBar(estadoTiendas);
