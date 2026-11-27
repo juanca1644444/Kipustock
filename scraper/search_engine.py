@@ -950,10 +950,11 @@ class SearchEngine:
             "su", "sus", "por", "sobre", "mas", "alta", "doble", "uso", "accesorios", "coche", "set", "pack",
             "mini", "super", "nuevo", "nueva", "combo", "kit", "calidad", "tipo", "portatil", "portátil",
             "inalambrico", "inalámbrico", "recargable", "usb", "electrico", "eléctrico", "potente", "profesional",
-            "teclado", "limpieza", "ruedas", "entrenamiento"
+            "teclado", "limpieza", "ruedas", "entrenamiento", "estilo", "diseno", "diseño", "casual", "verano",
+            "invierno", "otono", "otoño", "primavera", "moda"
         }
 
-        # Extraer sustantivo principal (priorizando el término de búsqueda original del usuario si existe)
+        # Extraer sustantivos y términos clave
         clean_root = normalize_search_query(root_query).lower() if root_query else ""
         root_tokens = [w for w in re.findall(r'\b[a-zA-ZáéíóúñÁÉÍÓÚÑ0-9]{3,}\b', clean_root) if w not in noise_modifiers]
         
@@ -966,15 +967,102 @@ class SearchEngine:
 
         noun_stem = primary_noun.rstrip("s")
 
-        # Generar lista ordenada de frases de búsqueda desde lo más específico a lo más general
+        # -------------------------------------------------------------------------
+        # FUNCIÓN DE VALIDACIÓN SEMÁNTICA ESTRICTA DE CORRESPONDENCIA IMAGEN-DESCRIPCIÓN
+        # -------------------------------------------------------------------------
+        def _is_catalog_match_valid(candidate_name: str, target_title: str, query: str = "") -> bool:
+            cand_low = candidate_name.lower()
+            target_low = target_title.lower()
+            query_low = query.lower()
+
+            # 1. Validación de Audiencia / Género / Edad
+            kids_kws = {"niña", "niñas", "niño", "niños", "nino", "ninos", "nina", "ninas", "infantil", "infantiles", "bebe", "bebes", "bebé", "bebés", "kids", "girl", "boy", "hijo", "hija", "escolar", "juvenil"}
+            men_kws = {"hombre", "hombres", "caballero", "caballeros", "varon", "varones"}
+            women_kws = {"mujer", "mujeres", "dama", "damas", "femenino"}
+
+            target_has_kids = any(k in target_low or k in query_low for k in kids_kws)
+            cand_has_kids = any(k in cand_low for k in kids_kws)
+            cand_has_men = any(k in cand_low for k in men_kws)
+            cand_has_women = any(k in cand_low for k in women_kws)
+
+            # Si el artículo buscado es para niños/niñas, NUNCA emparejar con ropa exclusiva de adultos
+            if target_has_kids:
+                if (cand_has_men or cand_has_women) and not cand_has_kids:
+                    return False
+
+            target_has_men = any(k in target_low or k in query_low for k in men_kws) and not target_has_kids
+            if target_has_men and not any(k in target_low for k in women_kws):
+                if (cand_has_women or cand_has_kids) and not cand_has_men:
+                    return False
+
+            target_has_women = any(k in target_low or k in query_low for k in women_kws) and not target_has_kids
+            if target_has_women and not any(k in target_low for k in men_kws):
+                if cand_has_men and not cand_has_women:
+                    return False
+
+            # 2. Personajes, Franquicias y Marcas Temáticas
+            character_kws = {
+                "minnie", "mickey", "disney", "marvel", "spiderman", "spider-man", "batman", "barbie",
+                "pokemon", "pokémon", "anime", "dragon ball", "naruto", "stitch", "hello kitty",
+                "mario", "star wars", "jurassic", "paw patrol", "frozen", "elsa", "avengers",
+                "iron man", "hulk", "capitan america", "sonic", "peppa", "minecraft", "princess", "princesas"
+            }
+            target_characters = [k for k in character_kws if k in target_low or k in query_low]
+            if target_characters:
+                # Si el título menciona un personaje infantil o franquicia, el producto DEBE contenerlo
+                if not any(k in cand_low for k in target_characters):
+                    return False
+
+            # 3. Categoría de Producto Incompatible
+            # Zapatos vs Ropa
+            is_target_shoe = any(k in target_low for k in ["zapatilla", "zapatillas", "zapato", "zapatos", "sandalia", "sandalias", "bota", "botas", "crocs"])
+            is_cand_shoe = any(k in cand_low for k in ["zapatilla", "zapatillas", "zapato", "zapatos", "sandalia", "sandalias", "bota", "botas", "crocs"])
+            if is_target_shoe != is_cand_shoe:
+                return False
+
+            # Tecnología/Herramientas vs Ropa
+            is_target_tech = any(k in target_low for k in ["smartwatch", "reloj inteligente", "audifonos", "auriculares", "taladro", "aspiradora", "parlante"])
+            is_cand_clothing = any(k in cand_low for k in ["polo", "polera", "pantalon", "short", "falda", "vestido", "blusa", "camisa", "casaca", "ropa"])
+            if is_target_tech and is_cand_clothing:
+                return False
+
+            # Ropa vs Carteras/Mochilas/Juguetes
+            is_target_clothing = any(k in target_low for k in ["polo", "polera", "camiseta", "sudadera", "casaca", "chaqueta", "pantalon", "short", "falda", "vestido", "blusa", "camisa", "ropa", "conjunto", "buzo", "pijama"])
+            is_cand_acc = any(k in cand_low for k in ["cartera", "mochila", "bolso", "billetera", "estuche", "neceser", "juguete", "muñeca", "peluche"])
+            if is_target_clothing and is_cand_acc and not any(k in cand_low for k in ["polo", "polera", "camiseta", "conjunto", "ropa"]):
+                return False
+
+            # 4. Coincidencia de tokens sustantivos mínimos
+            target_tokens = [w for w in re.findall(r'\b[a-zA-ZáéíóúñÁÉÍÓÚÑ0-9]{3,}\b', target_low) if w not in noise_modifiers]
+            if not target_tokens:
+                return False
+
+            matches = sum(1 for w in target_tokens if w in cand_low or w.rstrip("s") in cand_low)
+            if len(target_tokens) >= 2 and matches < 2:
+                return False
+            if matches == 0:
+                return False
+
+            return True
+
+        # Generar lista ordenada de frases de búsqueda desde lo más específico
+        # NUNCA usar sustantivo genérico solitario ("polera") si hay franquicias o temática
         search_candidates = []
         other_words = [w for w in substantive_words if w != primary_noun]
-        if other_words:
-            search_candidates.append(f"{primary_noun} {other_words[0]}")
-        search_candidates.append(primary_noun)
+        
+        # Combinar sustantivo principal con palabras distintivas
+        for ow in other_words[:2]:
+            search_candidates.append(f"{primary_noun} {ow}")
+        if len(other_words) >= 2:
+            search_candidates.append(f"{other_words[0]} {other_words[1]}")
+
+        # Solo si no hay modificadores se permite el sustantivo solitario
+        if not other_words:
+            search_candidates.append(primary_noun)
 
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         }
 
         async def _query_catalog(c: httpx.AsyncClient, base_domain: str, phrase: str) -> Tuple[str, Optional[Dict[str, Any]]]:
@@ -986,40 +1074,62 @@ class SearchEngine:
                     if isinstance(data, list):
                         for p in data[:8]:
                             p_name = p.get("productName") or p.get("productTitle") or ""
-                            p_name_low = p_name.lower()
-                            # Descartar cobertores/fundas si el producto buscado no es un cobertor
-                            is_acc_search = any(kw in clean_root for kw in ["funda", "cobertor", "cubierta", "cubre"])
-                            if not is_acc_search and any(kw in p_name_low for kw in ["cobertor", "funda para auto", "cubierta auto"]):
+                            # Validación semántica estricta anti-discrepancias
+                            if not _is_catalog_match_valid(p_name, title, clean_root):
                                 continue
-                            # Descartar prendas de vestir si la palabra buscada es 'vuelo' (en moda 'vuelos' significa volantes/pliegues)
-                            if any(w in phrase.lower() for w in ["vuelo", "pasaje", "aereo"]) and any(cl in p_name_low for cl in ["vestido", "falda", "blusa", "pantalon", "short", "polo", "ropa"]):
-                                continue
-                            # Validación estricta: el producto debe contener la raíz del sustantivo
-                            if primary_noun in p_name_low or noun_stem in p_name_low:
-                                items_list = p.get("items", [])
-                                if items_list:
-                                    first_item = items_list[0]
-                                    img_url = ""
-                                    if first_item.get("images"):
-                                        img_url = first_item["images"][0].get("imageUrl", "")
-                                    real_price = 0.0
-                                    sellers = first_item.get("sellers", [])
-                                    if sellers:
-                                        comm = sellers[0].get("commertialOffer", {})
-                                        try:
-                                            real_price = float(comm.get("Price", 0.0) or 0.0)
-                                        except (ValueError, TypeError):
-                                            real_price = 0.0
-                                    real_link = p.get("link") or ""
-                                    store_id = "PlazaVea" if "plazavea" in base_domain else "Oechsle"
-                                    if img_url and img_url.startswith("http"):
-                                        meta = {
-                                            "nombre": p_name,
-                                            "precio_compra": real_price,
-                                            "url_compra": real_link,
-                                            "tienda": store_id
-                                        }
-                                        return img_url, meta
+
+                            items_list = p.get("items", [])
+                            if items_list:
+                                first_item = items_list[0]
+                                img_url = ""
+                                if first_item.get("images"):
+                                    img_url = first_item["images"][0].get("imageUrl", "")
+                                if not img_url or not img_url.startswith("http"):
+                                    continue
+                                if used_images is not None and img_url in used_images:
+                                    continue
+
+                                real_price = 0.0
+                                sellers = first_item.get("sellers", [])
+                                if sellers:
+                                    comm = sellers[0].get("commertialOffer", {})
+                                    try:
+                                        real_price = float(comm.get("Price", 0.0) or 0.0)
+                                    except (ValueError, TypeError):
+                                        real_price = 0.0
+                                real_link = p.get("link") or ""
+                                store_id = "PlazaVea" if "plazavea" in base_domain else "Oechsle"
+                                meta = {
+                                    "nombre": p_name,
+                                    "precio_compra": real_price,
+                                    "url_compra": real_link,
+                                    "tienda": store_id
+                                }
+                                return img_url, meta
+            except Exception:
+                pass
+            return "", None
+
+        async def _query_falabella(c: httpx.AsyncClient, phrase: str) -> Tuple[str, Optional[Dict[str, Any]]]:
+            try:
+                u = f"https://www.falabella.com.pe/falabella-pe/search?Ntt={quote(phrase)}"
+                resp = await c.get(u, timeout=3.5)
+                if resp.status_code == 200:
+                    raw_items = self._extract_nextjs_products(resp.text, "Falabella", u, max_items=8)
+                    for it in raw_items:
+                        c_name = it.get("nombre") or ""
+                        if _is_catalog_match_valid(c_name, title, clean_root):
+                            img_url = it.get("foto_url") or ""
+                            if img_url and img_url.startswith("http"):
+                                if used_images is not None and img_url in used_images:
+                                    continue
+                                meta = {
+                                    "nombre": c_name,
+                                    "precio_compra": float(it.get("precio_compra") or 0.0),
+                                    "url_compra": it.get("url_compra") or u,
+                                    "tienda": "Falabella"
+                                }
+                                return img_url, meta
             except Exception:
                 pass
             return "", None
@@ -1028,6 +1138,11 @@ class SearchEngine:
 
         async def _execute_search(c: httpx.AsyncClient) -> Tuple[str, Optional[Dict[str, Any]]]:
             for phrase in search_candidates:
+                # 1. Probar Falabella
+                f_img, f_meta = await _query_falabella(c, phrase)
+                if f_img:
+                    return f_img, f_meta
+                # 2. Probar Oechsle / PlazaVea
                 for dom in domains:
                     found_img, meta = await _query_catalog(c, dom, phrase)
                     if found_img:
@@ -1038,7 +1153,7 @@ class SearchEngine:
             return await _execute_search(client)
         else:
             try:
-                async with httpx.AsyncClient(headers=headers, timeout=3.0, follow_redirects=True) as local_c:
+                async with httpx.AsyncClient(headers=headers, timeout=4.0, follow_redirects=True) as local_c:
                     return await _execute_search(local_c)
             except Exception:
                 return "", None
