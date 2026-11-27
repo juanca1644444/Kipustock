@@ -20,6 +20,7 @@ class ProductoPropio(Base):
     stock = Column(Integer, default=0, nullable=False)
     costo_unitario = Column(Float, default=0.0, nullable=False)
     precio_venta = Column(Float, default=0.0, nullable=False)
+    precio_oferta = Column(Float, nullable=True)  # Precio promocional temporal para campañas
     estado = Column(String(50), default="Nuevo", nullable=False)  # "Nuevo", "Saldo", "Liquidación", "Bajo Pedido"
     url_compra = Column(String(500), nullable=True)
     proveedor = Column(String(100), default="Inventario Propio", nullable=True)
@@ -58,6 +59,7 @@ class ItemLote(Base):
     cantidad = Column(Integer, default=1, nullable=False)
     costo_compra = Column(Float, default=0.0, nullable=False)  # Inversión por unidad
     precio_venta = Column(Float, default=0.0, nullable=False)  # Precio de venta esperado
+    precio_oferta = Column(Float, nullable=True)  # Precio promocional temporal para campañas
     url_compra = Column(String(500), nullable=True)
     tiempo_entrega = Column(String(100), default="24 a 48 hrs", nullable=True)
     notas = Column(Text, nullable=True)
@@ -429,6 +431,7 @@ class ProductoTiendaPublico(BaseModel):
     sku: Optional[str] = None
     foto_url: Optional[str] = None
     precio_venta: float
+    precio_oferta: Optional[float] = None
     stock: int
     estado: str
     tiempo_entrega: Optional[str] = "Inmediata"

@@ -20,6 +20,8 @@ document.addEventListener("DOMContentLoaded", () => {
           nombre: String(item.nombre || "Producto"),
           foto_url: item.foto_url || null,
           precio_venta: Number(item.precio_venta) || 0,
+          precio_original: item.precio_original ? Number(item.precio_original) : null,
+          tiene_oferta: Boolean(item.tiene_oferta),
           cantidad: Math.max(1, parseInt(item.cantidad, 10) || 1),
           stock_max: Number(item.stock_max) || 999
         }));
@@ -159,11 +161,82 @@ document.addEventListener("DOMContentLoaded", () => {
       const res = await fetch("/api/store/products");
       if (res.ok) {
         state.products = await res.json();
+        applyPromotionalOffers();
         renderProducts();
       }
     } catch (e) {
       console.error("Error al cargar productos:", e);
       if (DOM.catalogCountText) DOM.catalogCountText.textContent = "Error al conectar con el almacén.";
+    }
+  }
+
+  function applyPromotionalOffers() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const rawOferta = urlParams.get("oferta") || urlParams.get("promo") || urlParams.get("descuento");
+    const promoOferta = rawOferta ? parseFloat(rawOferta) : null;
+    const targetId = urlParams.get("p") || urlParams.get("id");
+    const targetProdName = (urlParams.get("prod") || urlParams.get("q") || "").toLowerCase().trim();
+
+    let promoBannerShown = false;
+    let promoTargetName = "";
+    let promoTargetPrice = 0;
+
+    state.products.forEach(p => {
+      let urlOfferMatches = false;
+      if (promoOferta && !isNaN(promoOferta) && promoOferta > 0) {
+        if (targetId && String(p.id) === String(targetId)) {
+          urlOfferMatches = true;
+        } else if (targetProdName && p.nombre.toLowerCase().includes(targetProdName)) {
+          urlOfferMatches = true;
+        } else if (!targetId && !targetProdName && state.products.length === 1) {
+          urlOfferMatches = true;
+        }
+      }
+
+      if (urlOfferMatches) {
+        p.precio_original = Number(p.precio_venta);
+        p.precio_venta = Number(promoOferta);
+        p.tiene_oferta = true;
+        promoBannerShown = true;
+        promoTargetName = p.nombre;
+        promoTargetPrice = promoOferta;
+      } else if (p.precio_oferta && Number(p.precio_oferta) > 0 && Number(p.precio_oferta) < Number(p.precio_venta)) {
+        p.precio_original = Number(p.precio_venta);
+        p.precio_venta = Number(p.precio_oferta);
+        p.tiene_oferta = true;
+      }
+    });
+
+    // Colocar productos con oferta al inicio para que el cliente los vea de inmediato
+    state.products.sort((a, b) => (b.tiene_oferta ? 1 : 0) - (a.tiene_oferta ? 1 : 0));
+
+    // Si había productos en el carrito, actualizar sus precios si coinciden con los que tienen oferta
+    if (state.cart && state.cart.length > 0) {
+      let updatedCart = false;
+      state.cart.forEach(item => {
+        const prod = state.products.find(p => Number(p.id) === Number(item.product_id));
+        if (prod && prod.tiene_oferta) {
+          item.precio_original = prod.precio_original;
+          item.precio_venta = prod.precio_venta;
+          item.tiene_oferta = true;
+          updatedCart = true;
+        }
+      });
+      if (updatedCart) saveCart();
+    }
+
+    // Mostrar banner de oferta activa si corresponde
+    const bannerEl = document.getElementById("promoOfferBanner");
+    const bannerDesc = document.getElementById("promoOfferDesc");
+    if (bannerEl) {
+      if (promoBannerShown) {
+        bannerEl.style.display = "flex";
+        if (bannerDesc) {
+          bannerDesc.textContent = `Se ha activado el precio especial de S/ ${promoTargetPrice.toFixed(2)} para "${promoTargetName}". ¡Aprovecha la promoción hoy!`;
+        }
+      } else {
+        bannerEl.style.display = "none";
+      }
     }
   }
 
@@ -211,7 +284,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       let badgeCls = "badge-nuevo";
       let estadoLabel = p.estado || "Nuevo";
-      if (isOnDemand) {
+      if (p.tiene_oferta) {
+        badgeCls = "badge-liquidacion";
+        estadoLabel = "🔥 OFERTA HOY";
+      } else if (isOnDemand) {
         badgeCls = "badge-bajopedido";
         estadoLabel = "⏳ Por Encargo";
       } else if (estadoLower.includes("saldo")) {
@@ -228,6 +304,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const imgSrc = p.foto_url ? p.foto_url : NEUTRAL_PLACEHOLDER;
       const priceText = formatMoney(p.precio_venta);
+      const originalPriceText = p.precio_original ? formatMoney(p.precio_original) : "";
 
       // Enlace directo WhatsApp
       const waPhone = state.config.whatsapp_ventas || "51944830586";
@@ -237,8 +314,24 @@ document.addEventListener("DOMContentLoaded", () => {
       
       const waMsg = isOnDemand
         ? `¡Hola! Me interesa pedir por encargo el producto *${p.nombre}* (${skuDisplay})\nPrecio: *${priceText}*\nModalidad: Contraentrega en 24 a 48 hrs (Efectivo/Yape/Plin).\nCatálogo: ${currentStoreUrl}`
-        : `¡Hola! Me interesa comprar el producto *${p.nombre}* (${p.estado})\nPrecio: *${priceText}*\n¿Está disponible para envío?\nCatálogo: ${currentStoreUrl}`;
+        : (p.tiene_oferta && p.precio_original
+            ? `¡Hola! Me interesa aprovechar la OFERTA de *${p.nombre}* (${p.estado})\nPrecio Normal: ${originalPriceText}\n🔥 *PRECIO OFERTA: ${priceText}*\n¿Está disponible para despacho inmediato?\nCatálogo: ${currentStoreUrl}`
+            : `¡Hola! Me interesa comprar el producto *${p.nombre}* (${p.estado})\nPrecio: *${priceText}*\n¿Está disponible para envío?\nCatálogo: ${currentStoreUrl}`);
       const waUrl = `https://wa.me/${cleanWa}?text=${encodeURIComponent(waMsg)}`;
+
+      const priceRowHtml = (p.tiene_oferta && p.precio_original)
+        ? `
+          <div class="product-price-row" style="flex-wrap: wrap; gap: 4px; align-items: baseline;">
+            <span class="price-old" style="text-decoration: line-through; color: #94a3b8; font-size: 0.82rem; margin-right: 6px;">Antes: ${originalPriceText}</span>
+            <span class="price-num" style="color: #10b981; font-weight: 800; font-size: 1.15rem;">🔥 OFERTA: ${priceText}</span>
+          </div>
+        `
+        : `
+          <div class="product-price-row">
+            <span class="price-lbl">${isOnDemand ? 'Precio por encargo:' : 'Precio contado:'}</span>
+            <span class="price-num">${priceText}</span>
+          </div>
+        `;
 
       card.innerHTML = `
         <div class="product-img-box">
@@ -250,15 +343,12 @@ document.addEventListener("DOMContentLoaded", () => {
           <h3 class="product-title" title="${p.nombre}">${p.nombre}</h3>
           <p class="product-sub">${skuDisplay}</p>
           
-          <div class="product-price-row">
-            <span class="price-lbl">${isOnDemand ? 'Precio por encargo:' : 'Precio contado:'}</span>
-            <span class="price-num">${priceText}</span>
-          </div>
+          ${priceRowHtml}
 
           <div class="product-actions-row">
             <button class="btn-add-cart" data-id="${p.id}">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="8" cy="21" r="1"></circle><circle cx="19" cy="21" r="1"></circle><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"></path></svg>
-              <span>${isOnDemand ? 'Pedir Contraentrega' : 'Agregar al Carrito'}</span>
+              <span>${isOnDemand ? 'Pedir Contraentrega' : (p.tiene_oferta ? '¡Aprovechar Oferta!' : 'Agregar al Carrito')}</span>
             </button>
             <a href="${waUrl}" target="_blank" rel="noopener noreferrer" class="btn-quick-wa" title="Consultar por WhatsApp">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
@@ -293,6 +383,8 @@ document.addEventListener("DOMContentLoaded", () => {
         nombre: prod.nombre,
         foto_url: prod.foto_url,
         precio_venta: Number(prod.precio_venta),
+        precio_original: prod.precio_original ? Number(prod.precio_original) : null,
+        tiene_oferta: Boolean(prod.tiene_oferta),
         cantidad: 1,
         stock_max: Number(prod.stock)
       });
@@ -383,13 +475,19 @@ document.addEventListener("DOMContentLoaded", () => {
     DOM.cartItemsList.innerHTML = state.cart.map(item => {
       const subtotal = item.precio_venta * item.cantidad;
       const imgSrc = item.foto_url ? item.foto_url : NEUTRAL_PLACEHOLDER;
+      const offerBadge = item.tiene_oferta 
+        ? `<span style="display: inline-block; font-size: 0.70rem; background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.4); padding: 1px 6px; border-radius: 4px; margin-left: 4px; font-weight: 700;">🔥 Oferta</span>` 
+        : "";
+      const priceDisplay = item.tiene_oferta && item.precio_original
+        ? `<span style="text-decoration: line-through; color: #64748b; font-size: 0.75rem; margin-right: 4px;">${formatMoney(item.precio_original)}</span><strong style="color: #10b981;">${formatMoney(item.precio_venta)}</strong>`
+        : `<span>${formatMoney(item.precio_venta)}</span>`;
 
       return `
         <div class="cart-item-row">
           <img class="cart-item-img" src="${imgSrc}" alt="${item.nombre}" onerror="this.onerror=null; this.src='${NEUTRAL_PLACEHOLDER}'" />
           <div class="cart-item-info">
             <h5 class="cart-item-title" title="${item.nombre}">${item.nombre}</h5>
-            <div class="cart-item-price">${formatMoney(item.precio_venta)} <span style="font-size: 0.74rem; color: #94a3b8; font-weight: normal;">(x${item.cantidad} = ${formatMoney(subtotal)})</span></div>
+            <div class="cart-item-price">${priceDisplay} ${offerBadge} <span style="font-size: 0.74rem; color: #94a3b8; font-weight: normal;">(x${item.cantidad} = ${formatMoney(subtotal)})</span></div>
           </div>
           <div class="cart-item-controls">
             <div class="cart-stepper">
@@ -565,10 +663,12 @@ document.addEventListener("DOMContentLoaded", () => {
       waMsg += `🛒 *DETALLE DEL PEDIDO:*\n`;
 
       state.cart.forEach(item => {
-        waMsg += `• ${item.cantidad}x ${item.nombre} - ${formatMoney(item.precio_venta * item.cantidad)}\n`;
+        const offerTag = item.tiene_oferta ? " (🔥 Oferta Aplicada)" : "";
+        waMsg += `• ${item.cantidad}x ${item.nombre} - ${formatMoney(item.precio_venta * item.cantidad)}${offerTag}\n`;
       });
 
-      waMsg += `\n💰 *TOTAL A PAGAR: ${formatMoney(totalAmount)}*\n`;
+      const hasOffer = state.cart.some(i => i.tiene_oferta);
+      waMsg += `\n💰 *TOTAL A PAGAR: ${formatMoney(totalAmount)}${hasOffer ? ' (Oferta Aplicada)' : ''}*\n`;
       if (notes) waMsg += `📝 *Notas:* ${notes}\n`;
       if (state.uploadedProofUrl) waMsg += `📎 *Comprobante:* Adjunto en sistema web\n`;
       waMsg += `🌐 *Tienda:* ${window.location.origin}/tienda\n\n`;

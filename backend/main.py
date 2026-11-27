@@ -117,6 +117,7 @@ def run_db_migrations():
         ("url_compra", "VARCHAR(500)"),
         ("proveedor", "VARCHAR(100) DEFAULT 'Inventario Propio'"),
         ("tiempo_entrega", "VARCHAR(100) DEFAULT 'Inmediata'"),
+        ("precio_oferta", "FLOAT"),
     ]:
         try:
             with engine.begin() as conn:
@@ -126,6 +127,7 @@ def run_db_migrations():
     for col, col_type in [
         ("url_compra", "VARCHAR(500)"),
         ("tiempo_entrega", "VARCHAR(100) DEFAULT '24 a 48 hrs'"),
+        ("precio_oferta", "FLOAT"),
     ]:
         try:
             with engine.begin() as conn:
@@ -2119,6 +2121,12 @@ def generate_social_campaign(payload: CampaignGenerateRequest, db: Session = Dep
         if not item:
             raise HTTPException(status_code=404, detail="Ítem de lote/arbitraje no encontrado.")
         
+        # Si se especificó precio de oferta, actualizar el ítem
+        if payload.precio_oferta and payload.precio_oferta > 0:
+            item.precio_oferta = float(payload.precio_oferta)
+            db.commit()
+            db.refresh(item)
+        
         # Calcular margen si no fue provisto
         margen_calc = None
         if item.precio_venta > 0 and item.costo_compra > 0:
@@ -2140,6 +2148,12 @@ def generate_social_campaign(payload: CampaignGenerateRequest, db: Session = Dep
         prod = db.query(ProductoPropio).filter(ProductoPropio.id == payload.producto_propio_id).first()
         if not prod:
             raise HTTPException(status_code=404, detail="Producto propio no encontrado.")
+        
+        # Si se especificó precio de oferta, actualizar el producto en catálogo
+        if payload.precio_oferta and payload.precio_oferta > 0:
+            prod.precio_oferta = float(payload.precio_oferta)
+            db.commit()
+            db.refresh(prod)
         
         margen_calc = None
         if prod.precio_venta > 0 and prod.costo_unitario > 0:
@@ -2183,6 +2197,27 @@ def generate_social_campaign(payload: CampaignGenerateRequest, db: Session = Dep
             url_publica = active_store_url
         elif not url_publica:
             url_publica = "http://localhost:8000/tienda"
+
+    # Si la campaña incluye precio de oferta, enriquecer el enlace público de la tienda
+    # con parámetros de promoción (?oferta=XX.XX&p=ID&prod=NOMBRE) para que cuando el
+    # cliente pulse el enlace en WhatsApp o redes, la tienda web asuma automáticamente el precio de oferta
+    if payload.precio_oferta and payload.precio_oferta > 0:
+        import urllib.parse
+        sep = "&" if "?" in url_publica else "?"
+        params = [f"oferta={payload.precio_oferta:.2f}"]
+        if payload.producto_propio_id:
+            params.append(f"p={payload.producto_propio_id}")
+        elif payload.item_lote_id:
+            params.append(f"item={payload.item_lote_id}")
+        
+        nombre_prod = product_data.get("nombre")
+        if nombre_prod:
+            nombre_corto = " ".join(nombre_prod.split()[:3])
+            params.append(f"prod={urllib.parse.quote(nombre_corto)}")
+        
+        promo_store_url = f"{url_publica}{sep}{'&'.join(params)}"
+        url_publica = promo_store_url
+        product_data["enlace"] = promo_store_url
 
     try:
         campaign_result = run_full_campaign_generation(
