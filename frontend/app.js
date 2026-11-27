@@ -5502,7 +5502,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <input type="number" class="form-control quote-item-qty" data-index="${idx}" min="1" value="${it.cantidad}" style="padding:0.25rem; font-size:0.8rem; text-align:center; width:50px;">
         </td>
         <td style="text-align:right;">
-          <input type="number" class="form-control quote-item-price" data-index="${idx}" step="0.50" min="0" value="${it.precio_unitario.toFixed(2)}" style="padding:0.25rem; font-size:0.8rem; text-align:right; width:75px;">
+          <input type="number" class="form-control quote-item-price" data-index="${idx}" step="0.01" min="0" value="${it.precio_unitario.toFixed(2)}" style="padding:0.25rem; font-size:0.8rem; text-align:right; width:75px;">
         </td>
         <td style="text-align:right; font-weight:700; color:#e2e8f0;">
           <span class="quote-item-subtotal">S/ ${(it.cantidad * it.precio_unitario).toFixed(2)}</span>
